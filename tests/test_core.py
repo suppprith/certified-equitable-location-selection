@@ -93,6 +93,33 @@ def test_ede_objective_variant_beats_centroid_on_ede():
     assert rows["ours_ede"]["ede"] <= rows["centroid"]["ede"] + 1e-6
     assert rows["ours_ede"]["ede"] <= rows["exhaustive_ede"]["ede"] * 1.5 + 1e-6
 
+def test_assign_modes_with_choice_structure():
+    from fairmp.scenarios import assign_modes_with_choice
+    m = assign_modes_with_choice(5, seed=1, frac_choice=0.4)
+    assert len(m) == 5
+    multi = [x for x in m if len(x) > 1]
+    assert len(multi) >= 1
+    for x in m:
+        assert 1 <= len(x) <= 2 and len(set(x)) == len(x)
+
+def test_effective_takes_min_over_mode_set():
+    from fairmp.geo import LatLng
+    from fairmp.travel_time import CachedEvaluator, PrecomputedBackend
+    o = LatLng(51.5, -0.1)
+    a = LatLng(51.51, -0.12)
+    b = LatLng(51.49, -0.08)
+    pre = PrecomputedBackend()
+    pre.put("walking", o, a, 10.0)
+    pre.put("cycling", o, a, 14.0)
+    pre.put("walking", o, b, 20.0)
+    pre.put("cycling", o, b, 12.0)
+    ev = CachedEvaluator(pre)
+
+    assert ev.effective(o, a, ["walking", "cycling"]) == 10.0
+    assert ev.effective(o, b, ["walking", "cycling"]) == 12.0
+
+    assert ev.effective(o, b, ["walking"]) == 20.0
+
 def test_min_variance_over_box():
 
     assert min_variance_over_box([10, 12], [14, 16]) == 0.0

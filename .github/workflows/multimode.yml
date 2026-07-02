@@ -1,0 +1,83 @@
+name: multimode
+
+# Real London run where some users carry a genuine two-mode set, so the
+# min-over-modes in Eq. 1 is exercised rather than trivial. Offloaded from an
+# 8 GB laptop to a 16 GB runner. Smoke with n_instances=3, commit_results=false
+# first, then n_instances=100, commit_results=true for the reported numbers.
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_instances:
+        description: Instances
+        default: "100"
+        type: string
+      commit_results:
+        description: Commit result CSVs back to main
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  multimode-london:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pip install -r requirements.txt
+      - name: Fetch London network + GTFS
+        run: python scripts/fetch_data.py --only london
+      - name: Multi-mode social meetup (London)
+        env:
+          N_INSTANCES: ${{ inputs.n_instances }}
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: |
+          rm -f outputs/multimode_london.csv outputs/multimode_choice_effect.csv
+          python scripts/run_multimode_london.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: multimode
+          path: |
+            outputs/multimode_london.csv
+            outputs/multimode_choice_effect.csv
+
+  commit-results:
+    needs: [multimode-london]
+    if: ${{ inputs.commit_results }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+      - name: Stage result CSVs
+        run: |
+          cp _artifacts/multimode/multimode_london.csv outputs/multimode_london.csv
+          cp _artifacts/multimode/multimode_choice_effect.csv outputs/multimode_choice_effect.csv
+          rm -rf _artifacts
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add outputs/multimode_london.csv outputs/multimode_choice_effect.csv
+          if git diff --cached --quiet; then
+            echo "no result changes to commit"
+          else
+            git commit -m "Add ${{ inputs.n_instances }}-instance multi-mode London results"
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase --autostash origin main && git push && break
+              echo "push attempt $attempt rejected (concurrent push); retrying"; sleep 5
+            done
+          fi

@@ -16,6 +16,9 @@ CITY_BBOX = {
 
 MODES = ["transit", "driving", "walking", "cycling"]
 
+CHOICE_PAIRS = [["driving", "transit"], ["walking", "cycling"],
+                ["cycling", "transit"], ["driving", "cycling"]]
+
 def sample_origins(city, n, seed=0, spread="uniform", clusters=2, cluster_sd_deg=0.02):
     rng = random.Random(seed)
     lat0, lng0, lat1, lng1 = CITY_BBOX[city]
@@ -37,3 +40,12 @@ def assign_modes(n, mix="mixed", seed=0):
     rng = random.Random(seed)
     chosen = [rng.choice(MODES) for _ in range(n)] if mix == "mixed" else [mix] * n
     return [[m] for m in chosen]
+
+def assign_modes_with_choice(n, seed=0, frac_choice=0.4):
+
+    rng = random.Random(seed)
+    modes = [[rng.choice(MODES)] for _ in range(n)]
+    k = max(1, round(frac_choice * n))
+    for i in rng.sample(range(n), min(k, n)):
+        modes[i] = list(rng.choice(CHOICE_PAIRS))
+    return modes
