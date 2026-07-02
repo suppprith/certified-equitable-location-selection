@@ -86,6 +86,18 @@ def _min_sum_point(demand, ev, res, courier):
             best_val, best = s, pt
     return best
 
+def _min_range_point(demand, ev, res, courier):
+
+    best, best_val = None, math.inf
+    for _c, pt in polyfill_centroids(region_polygon(demand), res):
+        times = [ev.effective(o, pt, courier) for o in demand]
+        if not all(math.isfinite(t) for t in times):
+            continue
+        r = max(times) - min(times)
+        if r < best_val:
+            best_val, best = r, pt
+    return best
+
 def summarize_site(times, weights, sla_min) -> dict:
     return {
         "w_variance": metrics.wvariance(times, weights),
@@ -123,6 +135,7 @@ def run_darkstore_instance(demand, weights, backend, params=None, sla_min=10.0, 
         ("coverage_max", lambda ev: _coverage_max_point(demand, weights, ev, sla_min, p.fine_res, courier)),
         ("weighted_centroid", lambda ev: _weighted_centroid(demand, weights)),
         ("min_sum", lambda ev: _min_sum_point(demand, ev, p.fine_res, courier)),
+        ("min_range", lambda ev: _min_range_point(demand, ev, p.fine_res, courier)),
     ):
         ev = CachedEvaluator(backend)
         pt = fn(ev)
