@@ -33,7 +33,10 @@ def _table(rows, colspec, header, caption, label):
     return "\n".join(out)
 
 def fairness_table():
-    g = _grouped(f"{OUT}/london.csv", ["variance", "jain", "gini", "ede", "max"])
+    df = pd.read_csv(f"{OUT}/london.csv")
+    solvable = set(df.loc[df["method"] == "ours", "seed"])
+    df = df[df["seed"].isin(solvable)]
+    g = df.groupby("method")[["variance", "jain", "gini", "ede", "max"]].mean(numeric_only=True)
     g = g.drop(index=[m for m in ["exhaustive_ede"] if m in g.index])
     g = g.sort_values("variance")
     rows = [f"{DISPLAY.get(m, m)} & {r.variance:.1f} & {r.jain:.2f} & {r.gini:.2f} & "
@@ -41,9 +44,12 @@ def fairness_table():
     return _table(
         rows, "lrrrrr",
         "Method & Variance & Jain & Gini & EDE & Max (min)",
-        "London social meetup, mean over eight instances. Lower variance, Gini, EDE, "
-        "and max are fairer; higher Jain is fairer. The variance objective minimises "
-        "variance and the EDE objective minimises EDE; both match their exhaustive references.",
+        f"London social meetup, mean over the {len(solvable)} solvable instances. On "
+        "instances where a method's point is unreachable for some user, its variance "
+        "is computed over the reachable users only, which favours that method. Lower "
+        "variance, Gini, EDE, and max are fairer; higher Jain is fairer. The variance "
+        "objective minimises variance and the EDE objective minimises EDE; both match "
+        "their exhaustive references.",
         "tab:fairness")
 
 def adversarial_table():
@@ -64,7 +70,9 @@ def adversarial_table():
         "tab:adversarial")
 
 def darkstore_table():
-    g = _grouped(f"{OUT}/darkstore.csv", ["w_variance", "courier_gini", "pct_within_sla"])
+    df = pd.read_csv(f"{OUT}/darkstore.csv")
+    n_seeds = df["seed"].nunique()
+    g = df.groupby("method")[["w_variance", "courier_gini", "pct_within_sla"]].mean(numeric_only=True)
     order = [m for m in ["ours", "ours_ede", "min_sum", "weighted_centroid", "coverage_max"] if m in g.index]
     g = g.reindex(order)
     rows = [f"{DISPLAY.get(m, m)} & {r.w_variance:.1f} & {r.courier_gini:.2f} & {r.pct_within_sla:.0f}"
@@ -72,22 +80,24 @@ def darkstore_table():
     return _table(
         rows, "lrrr",
         "Method & W-variance & Courier Gini & Within-SLA (\\%)",
-        "Dark-store siting on the real London network (real cycling times, synthetic "
-        "demand, eight instances, SLA 10 min). Lower w-variance and Gini are fairer.",
+        f"Dark-store siting on the real London network (real cycling times, synthetic "
+        f"demand, {n_seeds} instances, SLA 10 min). Lower w-variance and Gini are fairer.",
         "tab:darkstore")
 
 def rideshare_table():
-    g = _grouped(f"{OUT}/rideshare.csv", ["variance", "spread", "max", "jain"])
-    order = [m for m in ["ours", "min_range", "random", "min_max", "centroid", "min_sum"] if m in g.index]
+    df = pd.read_csv(f"{OUT}/rideshare_sf.csv")
+    n_seeds = df["seed"].nunique()
+    g = df.groupby("method")[["variance", "spread", "max", "jain"]].mean(numeric_only=True)
+    order = [m for m in ["ours", "min_range", "random", "min_max", "min_sum"] if m in g.index]
     g = g.reindex(order)
     rows = [f"{DISPLAY.get(m, m)} & {r.variance:.1f} & {r.spread:.1f} & {r['max']:.1f} & {r.jain:.2f}"
             for m, r in g.iterrows()]
     return _table(
         rows, "lrrrr",
         "Method & Variance & Spread & Max (min) & Jain",
-        "Ride-share pickup on the real London path network: rider walk (access) time, "
-        "mean over eight instances. Geometric centroid/median are infeasible on some "
-        "instances (off-network) and are omitted.",
+        f"Ride-share pickup on the real San Francisco walk network: rider walk (access) "
+        f"time, mean over {n_seeds} instances. The geometric centroid, geometric median, "
+        "and weighted centroid are infeasible on some instances (off-network) and are omitted.",
         "tab:rideshare")
 
 def main():
@@ -95,7 +105,7 @@ def main():
         ("london.csv", fairness_table),
         ("adversarial.csv", adversarial_table),
         ("darkstore.csv", darkstore_table),
-        ("rideshare.csv", rideshare_table),
+        ("rideshare_sf.csv", rideshare_table),
     ]
     blocks = []
     for fname, fn in builders:
