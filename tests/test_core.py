@@ -10,6 +10,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fairmp import metrics
 from fairmp.algorithm import Params, fair_meeting_point
 from fairmp.baselines import exhaustive_variance, geometric_centroid, min_range
+from fairmp.certificate import (certificate_report, certified_search, euclidean_lipschitz,
+                                min_variance_over_box)
 from fairmp.runner import run_instance
 from fairmp.scenarios import assign_modes, sample_origins
 from fairmp.travel_time import CachedEvaluator, EuclideanBackend
@@ -90,6 +92,39 @@ def test_ede_objective_variant_beats_centroid_on_ede():
 
     assert rows["ours_ede"]["ede"] <= rows["centroid"]["ede"] + 1e-6
     assert rows["ours_ede"]["ede"] <= rows["exhaustive_ede"]["ede"] * 1.5 + 1e-6
+
+def test_min_variance_over_box():
+
+    assert min_variance_over_box([10, 12], [14, 16]) == 0.0
+
+    assert abs(min_variance_over_box([0, 3], [1, 4]) - 1.0) < 1e-6
+
+    assert abs(min_variance_over_box([0, 10, 20], [0, 10, 20]) - 200.0 / 3) < 1e-4
+
+def test_certificate_sound_and_adaptive_exact():
+    n = 5
+    backend = EuclideanBackend()
+    p = Params(coarse_res=8, fine_res=9, k_c=400, k_refine=10, t_max=240.0)
+    for seed in (0, 1, 7):
+        origins = sample_origins("london", n, seed=seed, spread="clustered",
+                                 clusters=2, cluster_sd_deg=0.04)
+        modes = assign_modes(n, "mixed", seed=seed)
+        lip = euclidean_lipschitz(modes)
+
+        ev = CachedEvaluator(backend)
+        xpt = exhaustive_variance(origins, modes, ev, res=9)
+        xvar = metrics.variance([ev.effective(o, xpt, m) for o, m in zip(origins, modes)])
+
+        ev2 = CachedEvaluator(backend)
+        best, _r, scored, _d = fair_meeting_point(origins, modes, ev2, p)
+        rep = certificate_report(origins, modes, ev2, p, best, scored, lip)
+        if rep["certified"]:
+            assert metrics.variance(best.times) <= xvar + 1e-9
+
+        ev3 = CachedEvaluator(backend)
+        _cbest, cert, _diag = certified_search(origins, modes, ev3, p, lip)
+        assert cert["certified"]
+        assert cert["v_star"] <= xvar + 1e-9
 
 if __name__ == "__main__":
     for name, fn in list(globals().items()):

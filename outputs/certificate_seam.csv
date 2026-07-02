@@ -1,0 +1,2 @@
+ours_variance,exhaustive_variance,opt_gap_pct,fixed_certified,fixed_extra_evals,adaptive_variance,adaptive_gap_pct,adaptive_rounds,plain_calls,adaptive_calls,exhaustive_calls,city,n,seed
+4.3,1.876,129.21,False,5,1.876,0.0,2,1910,3200,3415,london,5,7
