@@ -73,7 +73,7 @@ def darkstore_table():
     df = pd.read_csv(f"{OUT}/darkstore.csv")
     n_seeds = df["seed"].nunique()
     g = df.groupby("method")[["w_variance", "courier_gini", "pct_within_sla"]].mean(numeric_only=True)
-    order = [m for m in ["ours", "ours_ede", "min_sum", "weighted_centroid", "coverage_max"] if m in g.index]
+    order = [m for m in ["ours", "min_range", "ours_ede", "min_sum", "weighted_centroid", "coverage_max"] if m in g.index]
     g = g.reindex(order)
     rows = [f"{DISPLAY.get(m, m)} & {r.w_variance:.1f} & {r.courier_gini:.2f} & {r.pct_within_sla:.0f}"
             for m, r in g.iterrows()]
