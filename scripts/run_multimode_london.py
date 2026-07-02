@@ -128,7 +128,7 @@ def main():
             "users_using_secondary": used_secondary,
             "var_choice": round(var_c, 3),
             "var_primary_only": round(var_p, 3),
-            "var_reduction_pct": round(100 * (var_p - var_c) / var_p, 2) if var_p > 0 else 0.0,
+            "choice_var_change_pct": round(100 * (var_c - var_p) / var_p, 2) if var_p > 0 else 0.0,
             "point_moved_m": round(1000 * haversine_km(best_c.point, best_p.point), 1),
         })
 
@@ -147,13 +147,15 @@ def main():
     if not cmp.empty:
         moved = (cmp["point_moved_m"] > 1.0).mean()
         switched = (cmp["users_using_secondary"] > 0).mean()
-        print("\nDoes genuine mode choice change anything?")
+        print("\nIs the mode-set minimum (Eq. 1) genuinely exercised?")
         print(f"  instances where a multi-mode user takes their secondary mode "
               f"at the fair point: {100 * switched:.0f}%")
         print(f"  instances where mode choice moves the fair point vs primary-only: "
               f"{100 * moved:.0f}%")
-        print(f"  mean travel-time variance reduction from allowing choice: "
-              f"{cmp['var_reduction_pct'].mean():.1f}%")
+        print(f"  mean change in the fair point's variance when choice is allowed: "
+              f"{cmp['choice_var_change_pct'].mean():+.1f}% "
+              f"(choice is an efficiency lever, not an equity one: it lowers each "
+              f"user's own time but can widen the spread)")
 
 if __name__ == "__main__":
     main()
