@@ -147,8 +147,14 @@ def main():
     agg.round(4).to_csv("outputs/tessellation_summary.csv")
     print("\nwrote outputs/tessellation.csv and outputs/tessellation_summary.csv")
 
-    bad = df[(df.certified) & (df.certified_gap_pct > 1e-6)]
-    print("certificate soundness violations: %d  [must be 0]" % len(bad))
+    # The certificate claims optimality over the pattern's OWN fine grid, never over the
+    # finer reference grid. Comparing against ref_opt conflates the discretization gap with
+    # a soundness failure and reports false alarms.
+    v_star = df.ref_opt * (1 + df.certified_gap_pct / 100.0)
+    bad = df[(df.certified) & (v_star > df.own_grid_opt + 1e-6)]
+    print("certificate soundness violations vs own grid: %d  [must be 0]" % len(bad))
+    print("mean certified gap vs the finer reference grid: %.3f%%  [discretization, not a failure]"
+          % df[df.certified].certified_gap_pct.mean())
 
 
 if __name__ == "__main__":
