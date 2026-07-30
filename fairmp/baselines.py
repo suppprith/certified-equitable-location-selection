@@ -38,10 +38,12 @@ def geometric_median(origins, modes_list=None, evaluator=None, iters=200, eps=1e
         x, y = ux, uy
     return LatLng(y, x)
 
-def _grid_search(origins, modes_list, evaluator, res, key, bucket="static"):
+def _grid_search(origins, modes_list, evaluator, res, key, bucket="static", tess=None):
     n = len(origins)
     best, best_val = None, math.inf
-    for _c, pt in polyfill_centroids(region_polygon(origins), res):
+    grid = (tess.cells_in(region_polygon(origins), res) if tess
+            else polyfill_centroids(region_polygon(origins), res))
+    for _c, pt in grid:
         times = [evaluator.effective(o, pt, modes, bucket) for o, modes in zip(origins, modes_list)]
         if not metrics.all_reachable(times, n):
             continue
@@ -51,26 +53,28 @@ def _grid_search(origins, modes_list, evaluator, res, key, bucket="static"):
     return best
 
 def min_sum(origins, modes_list, evaluator, res=9, bucket="static", **kw):
-    return _grid_search(origins, modes_list, evaluator, res, metrics.total_time, bucket)
+    return _grid_search(origins, modes_list, evaluator, res, metrics.total_time, bucket, kw.get("tess"))
 
 def min_max(origins, modes_list, evaluator, res=9, bucket="static", **kw):
-    return _grid_search(origins, modes_list, evaluator, res, metrics.max_time, bucket)
+    return _grid_search(origins, modes_list, evaluator, res, metrics.max_time, bucket, kw.get("tess"))
 
 def exhaustive_variance(origins, modes_list, evaluator, res=9, bucket="static", **kw):
 
-    return _grid_search(origins, modes_list, evaluator, res, metrics.variance, bucket)
+    return _grid_search(origins, modes_list, evaluator, res, metrics.variance, bucket, kw.get("tess"))
 
 def exhaustive_ede(origins, modes_list, evaluator, res=9, bucket="static", **kw):
 
-    return _grid_search(origins, modes_list, evaluator, res, metrics.kolm_pollak_ede, bucket)
+    return _grid_search(origins, modes_list, evaluator, res, metrics.kolm_pollak_ede, bucket, kw.get("tess"))
 
 def min_range(origins, modes_list, evaluator, res=9, bucket="static", **kw):
 
-    return _grid_search(origins, modes_list, evaluator, res, metrics.spread, bucket)
+    return _grid_search(origins, modes_list, evaluator, res, metrics.spread, bucket, kw.get("tess"))
 
 def random_best(origins, modes_list, evaluator, res=9, samples=100, seed=0, bucket="static", **kw):
     rng = random.Random(seed)
-    grid = polyfill_centroids(region_polygon(origins), res)
+    tess = kw.get("tess")
+    grid = (tess.cells_in(region_polygon(origins), res) if tess
+            else polyfill_centroids(region_polygon(origins), res))
     if not grid:
         return None
     n = len(origins)

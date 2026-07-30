@@ -4,12 +4,10 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 
-import h3
-
 from . import metrics
-from .algorithm import Area, Params, fair_meeting_point
-from .candidates import polyfill_centroids, region_polygon
-from .geo import LatLng, haversine_km
+from .algorithm import Area, Params, fair_meeting_point, resolve_tessellation
+from .candidates import region_polygon
+from .geo import haversine_km
 from .travel_time import EUCLIDEAN_SPEED_KMH
 
 
@@ -47,18 +45,13 @@ def min_variance_over_box(lo: list[float], hi: list[float]) -> float:
     return phi((left + right) / 2) / len(lo)
 
 
-def _cell_point(cell: str) -> LatLng:
-    lat, lng = h3.cell_to_latlng(cell)
-    return LatLng(lat, lng)
-
-
-def _uncovered_by_parent(origins, params: Params, evaluated_fine: set[str]):
+def _uncovered_by_parent(origins, params: Params, evaluated_fine: set[str], tess):
 
     poly = region_polygon(origins)
     uncovered = defaultdict(list)
-    for cell, pt in polyfill_centroids(poly, params.fine_res):
+    for cell, pt in tess.cells_in(poly, params.fine_res):
         if cell not in evaluated_fine:
-            uncovered[h3.cell_to_parent(cell, params.coarse_res)].append((cell, pt))
+            uncovered[tess.parent(cell, params.coarse_res)].append((cell, pt))
     return uncovered
 
 
@@ -77,12 +70,12 @@ def _parent_bound(parent_pt, fines, times, lipschitz) -> float:
     return bound
 
 
-def _split_scored(all_scored, params: Params, n: int):
+def _split_scored(all_scored, params: Params, n: int, tess):
 
     coarse_times, evaluated_fine = {}, set()
     v_reachable_min = math.inf
     for a in all_scored:
-        res = h3.get_resolution(a.cell)
+        res = tess.level(a.cell)
         if res == params.coarse_res:
             coarse_times[a.cell] = a.times
         elif res == params.fine_res:
@@ -92,58 +85,60 @@ def _split_scored(all_scored, params: Params, n: int):
     return coarse_times, evaluated_fine, v_reachable_min
 
 
-def _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket):
+def _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket, tess):
 
     times = coarse_times.get(parent)
     if times is None:
-        pt = _cell_point(parent)
+        pt = tess.center(parent)
         times = [evaluator.effective(o, pt, m, bucket) for o, m in zip(origins, modes_list)]
         coarse_times[parent] = times
     return times
 
 
 def certificate_report(origins, modes_list, evaluator, params: Params, best, all_scored,
-                       lipschitz, bucket: str = "static"):
+                       lipschitz, bucket: str = "static", tess=None):
 
     if params.gamma != 0:
         return {"certified": False, "reason": "gamma != 0", "failed": -1, "checked": -1}
+    t = resolve_tessellation(origins, params, tess)
     n = len(origins)
     v_star = metrics.variance(best.times)
-    coarse_times, evaluated_fine, v_reachable_min = _split_scored(all_scored, params, n)
+    coarse_times, evaluated_fine, v_reachable_min = _split_scored(all_scored, params, n, t)
     if v_reachable_min < v_star - 1e-9:
         return {"certified": False, "reason": "t_max excluded a lower-variance candidate",
                 "failed": -1, "checked": -1, "v_star": v_star}
 
-    uncovered = _uncovered_by_parent(origins, params, evaluated_fine)
+    uncovered = _uncovered_by_parent(origins, params, evaluated_fine, t)
     known = len(coarse_times)
     checked, failed = 0, 0
     for parent, fines in uncovered.items():
         checked += 1
-        times = _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket)
-        if _parent_bound(_cell_point(parent), fines, times, lipschitz) < v_star - 1e-9:
+        times = _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket, t)
+        if _parent_bound(t.center(parent), fines, times, lipschitz) < v_star - 1e-9:
             failed += 1
     return {"certified": failed == 0, "checked": checked, "failed": failed,
             "extra_evals": len(coarse_times) - known, "v_star": v_star}
 
 
 def certified_search(origins, modes_list, evaluator, params: Params, lipschitz,
-                     bucket: str = "static"):
+                     bucket: str = "static", tess=None):
 
+    t = resolve_tessellation(origins, params, tess)
     best, _runners, all_scored, diag = fair_meeting_point(
-        origins, modes_list, evaluator, params, bucket=bucket)
+        origins, modes_list, evaluator, params, bucket=bucket, tess=t)
     if best is None:
         return None, {"certified": False, "reason": "no feasible point"}, diag
 
     n = len(origins)
     incumbent, v_star = best, metrics.variance(best.times)
-    coarse_times, evaluated_fine, v_reachable_min = _split_scored(all_scored, params, n)
+    coarse_times, evaluated_fine, v_reachable_min = _split_scored(all_scored, params, n, t)
     v_star = min(v_star, v_reachable_min)
-    uncovered = _uncovered_by_parent(origins, params, evaluated_fine)
+    uncovered = _uncovered_by_parent(origins, params, evaluated_fine, t)
 
     bounds = {}
     for parent, fines in uncovered.items():
-        times = _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket)
-        bounds[parent] = _parent_bound(_cell_point(parent), fines, times, lipschitz)
+        times = _parent_times(parent, coarse_times, origins, modes_list, evaluator, bucket, t)
+        bounds[parent] = _parent_bound(t.center(parent), fines, times, lipschitz)
 
     rounds = 0
     while True:

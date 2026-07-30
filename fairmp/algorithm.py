@@ -7,8 +7,9 @@ from dataclasses import dataclass
 from shapely.geometry import Point
 
 from . import metrics
-from .candidates import polyfill_centroids, prefilter, refine_cells, region_polygon
-from .geo import LatLng, haversine_km
+from .candidates import prefilter, region_polygon
+from .geo import LatLng, centroid, haversine_km
+from .tessellation import make_tessellation
 
 @dataclass
 class Params:
@@ -23,6 +24,10 @@ class Params:
     ede_epsilon: float = metrics.EDE_EPSILON
     runners_up: int = 2
     min_sep_km: float = 1.0
+    tessellation: str = "h3"
+
+def resolve_tessellation(origins, params, tess=None):
+    return tess or make_tessellation(params.tessellation, centroid(origins))
 
 @dataclass
 class Area:
@@ -48,12 +53,13 @@ def _score(cell, point, origins, modes_list, ev, p, bucket, weights=None) -> Are
     return Area(cell, point, times, obj, metrics.feasible(times, n, p.t_max))
 
 def fair_meeting_point(origins, modes_list, evaluator, params: Params | None = None,
-                       is_dead=None, bucket: str = "static", weights=None):
+                       is_dead=None, bucket: str = "static", weights=None, tess=None):
 
     p = params or Params()
+    t = resolve_tessellation(origins, p, tess)
 
     poly = region_polygon(origins)
-    coarse = polyfill_centroids(poly, p.coarse_res)
+    coarse = t.cells_in(poly, p.coarse_res)
     if is_dead:
         coarse = [(c, pt) for c, pt in coarse if not is_dead(c)]
     coarse = prefilter(coarse, origins, p.k_c)
@@ -64,7 +70,7 @@ def fair_meeting_point(origins, modes_list, evaluator, params: Params | None = N
     fine_scored: list[Area] = []
     finite = sorted((a for a in coarse_scored if math.isfinite(a.objective)), key=lambda a: a.objective)
     for a in finite[: p.k_refine]:
-        for c, pt in refine_cells(a.cell, p.fine_res, p.ring):
+        for c, pt in t.refine(a.cell, p.fine_res, p.ring):
             if c in seen:
                 continue
             seen.add(c)
