@@ -1,0 +1,13 @@
+seed,truth,candidates,lip_assumed_value,lip_assumed_certified,lip_assumed_excess_pct,lip_assumed_UNSOUND,lip_assumed_calls,lip_empirical_value,lip_empirical_certified,lip_empirical_excess_pct,lip_empirical_UNSOUND,lip_empirical_calls,band_value,band_certified,band_excess_pct,band_UNSOUND,band_evaluated,band_reachable,band_unreachable,band_eval_frac,band_eval_frac_all,band_sweeps,band_point_queries
+0,250.24,3077,250.24,True,0.0,False,15165,250.24,True,0.0,False,15335,250.24,True,0.0,False,7,180,2897,0.0389,0.0023,5,35
+1,53.84,2816,53.84,True,0.0,False,11565,53.84,True,0.0,False,11765,53.84,True,0.0,False,2,733,2083,0.0027,0.0007,5,10
+2,1662.0,4399,1662.0,True,0.0,False,22185,1662.0,True,0.0,False,22215,1662.0,True,0.0,False,7,70,4329,0.1,0.0016,5,35
+3,73.2,1041,73.2,True,0.0,False,2740,73.2,True,0.0,False,2970,73.2,True,0.0,False,1,772,269,0.0013,0.001,5,5
+4,360.56,743,360.56,True,0.0,False,2535,360.56,True,0.0,False,2955,360.56,True,0.0,False,1,450,293,0.0022,0.0013,5,5
+5,1009.36,1519,1009.36,True,0.0,False,7610,1009.36,True,0.0,False,7690,1009.36,True,0.0,False,11,100,1419,0.11,0.0072,5,55
+6,436.24,3091,436.24,True,0.0,False,13520,436.24,True,0.0,False,14865,436.24,True,0.0,False,10,680,2411,0.0147,0.0032,5,50
+7,50.24,683,50.24,True,0.0,False,1435,50.24,True,0.0,False,1795,50.24,True,0.0,False,2,630,53,0.0032,0.0029,5,10
+8,190.0,1049,190.0,True,0.0,False,3120,190.0,True,0.0,False,3430,190.0,True,0.0,False,7,634,415,0.011,0.0067,5,35
+9,1247.84,1376,1247.84,True,0.0,False,6770,1247.84,True,0.0,False,7000,1247.84,True,0.0,False,6,173,1203,0.0347,0.0044,5,30
+10,136.24,2319,136.24,True,0.0,False,4025,136.24,True,0.0,False,5025,136.24,True,0.0,False,2,1955,364,0.001,0.0009,5,10
+11,206.16,1723,206.16,True,0.0,False,3540,206.16,True,0.0,False,4470,206.16,True,0.0,False,3,1376,347,0.0022,0.0017,5,15
