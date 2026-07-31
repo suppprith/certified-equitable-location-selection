@@ -52,6 +52,10 @@ def lipschitz_box(times: list[float], dist_km: float, lipschitz: list[float]):
 
 
 def intersect_box(a, b):
+    """Tighter than either input, but soundness does not survive the intersection: if one
+    box is unsound the result is too. Measured on real London surfaces, the Lipschitz box
+    is unsound even with an empirically calibrated constant, so the hybrid mode below is a
+    tightness experiment only and must not be used to certify on a real network."""
     lo = [max(x, y) for x, y in zip(a[0], b[0])]
     hi = [min(x, y) for x, y in zip(a[1], b[1])]
     return lo, hi
