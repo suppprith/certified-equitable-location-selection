@@ -22,7 +22,7 @@ from fairmp.travel_time import CachedEvaluator, EuclideanBackend
 COARSE, FINE, REF = 8, 9, 10
 CITIES = ["london", "bengaluru"]
 NS = [5, 6, 7]
-SEEDS = range(30)
+SEEDS = range(int(os.environ.get("N_INSTANCES", "30")))
 
 
 def reference_optimum(origins, modes, backend):

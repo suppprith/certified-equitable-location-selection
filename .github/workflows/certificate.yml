@@ -1,0 +1,144 @@
+name: certificate
+
+# Certificate and discretization experiments. The r5 jobs need the London network, so they
+# run on 16 GB hosted runners rather than on the laptop. Smoke first with small instance
+# counts and commit_results=false, then run for real.
+
+on:
+  workflow_dispatch:
+    inputs:
+      n_instances:
+        description: Instances per experiment
+        default: "12"
+        type: string
+      commit_results:
+        description: Commit result CSVs back to main
+        default: true
+        type: boolean
+      jobs:
+        description: Which experiments to run
+        default: all
+        type: choice
+        options: [all, soundness, lipschitz, tessellation]
+
+permissions:
+  contents: read
+
+jobs:
+  # Does an unsound bound actually make the adaptive search certify a wrong answer?
+  # This is the claim the paper rests on, so it runs first and alone.
+  soundness:
+    if: ${{ inputs.jobs == 'all' || inputs.jobs == 'soundness' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pip install -r requirements.txt
+      - name: Fetch London network + GTFS
+        run: python scripts/fetch_data.py --only london
+      - name: Certificate soundness, Lipschitz vs level-set bands
+        env:
+          N_INSTANCES: ${{ inputs.n_instances }}
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: python scripts/run_certificate_soundness.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: certificate_soundness
+          path: outputs/certificate_soundness.csv
+
+  # Is the per-mode Lipschitz constant valid on real multimodal surfaces at all?
+  lipschitz:
+    if: ${{ inputs.jobs == 'all' || inputs.jobs == 'lipschitz' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pip install -r requirements.txt
+      - name: Fetch London network + GTFS
+        run: python scripts/fetch_data.py --only london
+      - name: Lipschitz validity audit
+        env:
+          N_INSTANCES: ${{ inputs.n_instances }}
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: python scripts/run_lipschitz_audit.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lipschitz_audit
+          path: outputs/lipschitz_audit.csv
+
+  # Euclidean only, so no network download and no JVM heap pressure.
+  tessellation:
+    if: ${{ inputs.jobs == 'all' || inputs.jobs == 'tessellation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Unit tests
+        run: |
+          python tests/test_core.py
+          python tests/test_tessellation.py
+          python tests/test_objectives.py
+          python tests/test_bands.py
+      - name: Grid ablation
+        env:
+          N_INSTANCES: ${{ inputs.n_instances }}
+        run: python scripts/run_tessellation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tessellation
+          path: |
+            outputs/tessellation.csv
+            outputs/tessellation_summary.csv
+
+  commit-results:
+    needs: [soundness, lipschitz, tessellation]
+    if: ${{ always() && inputs.commit_results }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+      - name: Stage whichever result CSVs were produced
+        run: |
+          shopt -s nullglob
+          for f in _artifacts/*/*.csv; do cp "$f" outputs/; done
+          rm -rf _artifacts
+          git status --short outputs/
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add outputs/
+          if git diff --cached --quiet; then
+            echo "no result changes to commit"
+          else
+            git commit -m "Add certificate and discretization results from CI (${{ inputs.n_instances }} instances)"
+            for attempt in 1 2 3 4 5; do
+              git pull --rebase --autostash origin main && git push && break
+              echo "push attempt $attempt rejected (concurrent push); retrying"; sleep 5
+            done
+          fi

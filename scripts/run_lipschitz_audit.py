@@ -25,7 +25,7 @@ GTFS = [os.path.join(ROOT, "data", "london", "gtfs", "london_bus.zip")]
 COARSE, FINE = 8, 9
 PAIR_MAX_KM = 2.0      # the scale the parent-cell bound actually operates at
 DETOUR = 1.3
-SEEDS = range(8)
+SEEDS = range(int(os.environ.get("N_INSTANCES", "8")))
 N_USERS = 6
 
 # The GTFS feed is valid 2026-06-21 to 2027-03-21. A departure outside that window

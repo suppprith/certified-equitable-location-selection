@@ -5,7 +5,7 @@ import math
 from collections import defaultdict
 
 from . import metrics
-from .algorithm import Params, resolve_tessellation
+from .algorithm import Area, Params, resolve_tessellation
 from .candidates import region_polygon
 from .certificate import min_variance_over_box
 from .geo import haversine_km
@@ -123,6 +123,74 @@ def iso_int(origins, modes_list, backend, thresholds, points, oracle=None):
             "sweeps": oracle.sweeps,
         }
     return None
+
+
+def band_certified_search(origins, modes_list, evaluator, params: Params, thresholds,
+                          band_source, objective="variance", tess=None, bucket: str = "static",
+                          kappa=None):
+    """Certified search whose bound comes from level sets rather than from a smoothness
+    assumption.
+
+    The cost model this targets is the paid-API one. A one-to-all sweep per origin is cheap
+    and returns band membership, not per-point times: an isochrone call yields a polygon.
+    So the band gives a sound lower bound on the objective for *every* candidate at once,
+    for N sweeps, and exact per-point times still have to be bought one query at a time.
+
+    The search therefore evaluates candidates in increasing order of their band lower bound
+    and stops as soon as the next bound cannot beat the incumbent. Every candidate left
+    unevaluated has a bound at or above the incumbent, so the incumbent is optimal over the
+    candidate set. Unlike the Lipschitz box this needs no modulus of continuity, so it stays
+    valid across the discontinuities that a real multimodal field actually contains.
+    """
+    from . import objectives as ob
+
+    t = resolve_tessellation(origins, params, tess)
+    n = len(origins)
+    poly = region_polygon(origins)
+    cells = t.cells_in(poly, params.fine_res)
+    if not cells:
+        return None, {"certified": False, "reason": "no candidates"}
+
+    pts = [pt for _c, pt in cells]
+    oracle = FieldOracle(band_source)
+    fields = oracle.fields(origins, modes_list, pts)
+
+    box_min = ob.BOX_MIN[objective]
+    kw = {"kappa": kappa} if objective == "ede" else {}
+
+    bounds = []
+    for j in range(len(pts)):
+        times = [fields[i][j] for i in range(n)]
+        lo, hi = band_box(times, thresholds)
+        bounds.append((box_min(lo, hi, **kw), j))
+    bounds.sort()
+
+    evaluate = ob.EVAL[objective]
+    incumbent, best_val, evaluated = None, math.inf, 0
+    for bound, j in bounds:
+        if bound >= best_val - 1e-12:
+            break
+        cell, pt = cells[j]
+        times = [evaluator.effective(o, pt, m, bucket) for o, m in zip(origins, modes_list)]
+        evaluated += 1
+        if not metrics.all_reachable(times, n):
+            continue
+        val = evaluate(times, None, kappa) if objective == "ede" else evaluate(times)
+        if val < best_val:
+            best_val, incumbent = val, Area(cell, pt, times, val,
+                                            metrics.feasible(times, n, params.t_max))
+
+    return incumbent, {
+        "certified": incumbent is not None,
+        "objective": objective,
+        "value": best_val,
+        "candidates": len(pts),
+        "evaluated": evaluated,
+        "eval_fraction": evaluated / len(pts) if pts else float("nan"),
+        "sweeps": oracle.sweeps,
+        "point_queries": evaluator.calls,
+        "n_thresholds": len(thresholds) - 1,
+    }
 
 
 def band_certificate_report(origins, modes_list, evaluator, params: Params, best, all_scored,
