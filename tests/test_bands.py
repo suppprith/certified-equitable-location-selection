@@ -97,6 +97,42 @@ def test_band_certified_search_evaluates_a_small_fraction():
     assert info["eval_fraction"] < 0.5, info["eval_fraction"]
 
 
+def test_unreachable_candidates_are_never_queried():
+    """Regression: a candidate one user cannot reach falls in the open band [t_last, inf).
+    An unbounded ceiling drives the box minimum to zero, so without an explicit
+    reachability check the least promising candidates sort first and the search goes
+    nearly exhaustive. Seen on real London surfaces at 74 to 99 percent evaluated."""
+    from fairmp.geo import LatLng
+    from fairmp.travel_time import PrecomputedBackend
+
+    backend, origins, modes, tess, cells, thr, _f = _setup(0)
+
+    class HalfBlind(EuclideanBackend):
+        """User 0 can reach nothing east of the origin-set centroid."""
+
+        def __init__(self, cutoff_lng):
+            super().__init__()
+            self.cutoff = cutoff_lng
+
+        def minutes(self, origin, dest, mode, departure=None):
+            if origin == origins[0] and dest.lng > self.cutoff:
+                return math.inf
+            return super().minutes(origin, dest, mode, departure)
+
+    cutoff = centroid(origins).lng
+    blind = HalfBlind(cutoff)
+    ev = CachedEvaluator(blind)
+    inc, info = band_certified_search(origins, modes, ev, P, thr, blind, tess=tess)
+
+    assert info["unreachable"] > 0, "test setup failed to make anything unreachable"
+    assert info["reachable"] + info["unreachable"] == info["candidates"]
+    # the incumbent must be reachable for everyone
+    assert inc is not None
+    assert all(math.isfinite(t) for t in inc.times)
+    # and the search must not have paid a query for the unreachable half
+    assert info["evaluated"] <= info["reachable"], info
+
+
 def test_finer_bands_do_not_loosen_the_bound():
     backend, origins, modes, tess, cells, _thr, finite = _setup(2)
     ev = CachedEvaluator(backend)

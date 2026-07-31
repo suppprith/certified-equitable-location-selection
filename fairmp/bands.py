@@ -159,8 +159,18 @@ def band_certified_search(origins, modes_list, evaluator, params: Params, thresh
     kw = {"kappa": kappa} if objective == "ede" else {}
 
     bounds = []
+    unreachable = 0
     for j in range(len(pts)):
         times = [fields[i][j] for i in range(n)]
+        # A candidate one user cannot reach scores infinity, so it is not a competitor and
+        # must not be queried. Without this it lands in the open band [t_last, inf), whose
+        # unbounded ceiling drives the box minimum to zero and makes the least promising
+        # candidates look like the most promising ones. On real networks, where a large
+        # share of the grid is unreachable on foot, that alone forces a near-exhaustive
+        # search.
+        if not metrics.all_reachable(times, n):
+            unreachable += 1
+            continue
         lo, hi = band_box(times, thresholds)
         bounds.append((box_min(lo, hi, **kw), j))
     bounds.sort()
@@ -180,13 +190,19 @@ def band_certified_search(origins, modes_list, evaluator, params: Params, thresh
             best_val, incumbent = val, Area(cell, pt, times, val,
                                             metrics.feasible(times, n, params.t_max))
 
+    reachable = len(bounds)
     return incumbent, {
         "certified": incumbent is not None,
         "objective": objective,
         "value": best_val,
         "candidates": len(pts),
+        "reachable": reachable,
+        "unreachable": unreachable,
         "evaluated": evaluated,
-        "eval_fraction": evaluated / len(pts) if pts else float("nan"),
+        # against the reachable set, since unreachable candidates are excluded by the
+        # sweep itself and never cost a point query
+        "eval_fraction": evaluated / reachable if reachable else float("nan"),
+        "eval_fraction_all": evaluated / len(pts) if pts else float("nan"),
         "sweeps": oracle.sweeps,
         "point_queries": evaluator.calls,
         "n_thresholds": len(thresholds) - 1,

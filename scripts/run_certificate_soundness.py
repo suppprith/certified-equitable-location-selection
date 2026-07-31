@@ -99,7 +99,10 @@ def main():
         row["band_excess_pct"] = round(100 * (v - truth) / truth, 4) if truth > 1e-12 else 0.0
         row["band_UNSOUND"] = bool(info.get("certified") and v > truth + 1e-9)
         row["band_evaluated"] = info.get("evaluated", -1)
+        row["band_reachable"] = info.get("reachable", -1)
+        row["band_unreachable"] = info.get("unreachable", -1)
         row["band_eval_frac"] = round(info.get("eval_fraction", float("nan")), 4)
+        row["band_eval_frac_all"] = round(info.get("eval_fraction_all", float("nan")), 4)
         row["band_sweeps"] = info.get("sweeps", -1)
         row["band_point_queries"] = info.get("point_queries", -1)
 
