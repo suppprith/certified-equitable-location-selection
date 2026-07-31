@@ -130,9 +130,13 @@ def main():
         print("  %-14s certified %5.1f%%   UNSOUND %5.1f%% (%d)   mean excess over optimum %+7.3f%%"
               % (name, 100 * c.mean(), 100 * u.mean(), int(u.sum()), e.mean()))
     if "band_eval_frac" in df:
-        print("\n  band search evaluated %.1f%% of candidates on average (%.0f sweeps, %.0f point queries)"
-              % (100 * df.band_eval_frac.mean(), df.band_sweeps.mean(),
-                 df.band_point_queries.mean()))
+        print("\n  band search evaluated %.1f%% of the REACHABLE candidates on average"
+              % (100 * df.band_eval_frac.mean()))
+        print("  (%.1f%% of all candidates; %.0f of %.0f unreachable for at least one user)"
+              % (100 * df.band_eval_frac_all.mean(), df.band_unreachable.mean(),
+                 (df.band_reachable + df.band_unreachable).mean()))
+        print("  cost: %.0f sweeps and %.0f point queries per instance"
+              % (df.band_sweeps.mean(), df.band_point_queries.mean()))
     print("\nwrote outputs/certificate_soundness.csv")
 
 
