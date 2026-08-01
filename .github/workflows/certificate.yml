@@ -19,7 +19,7 @@ on:
         description: Which experiments to run
         default: all
         type: choice
-        options: [all, soundness, lipschitz, tessellation]
+        options: [all, soundness, lipschitz, tessellation, jumps]
 
 permissions:
   contents: read
@@ -82,6 +82,40 @@ jobs:
           name: lipschitz_audit
           path: outputs/lipschitz_audit.csv
 
+  # Are the extreme travel-time jumps a property of the point or of the route? Gates
+  # whether the paper may name a geographic cause for them.
+  jumps:
+    if: ${{ inputs.jobs == 'all' || inputs.jobs == 'jumps' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pip install -r requirements.txt
+      - name: Fetch London network + GTFS
+        run: python scripts/fetch_data.py --only london
+      - name: Inspect the largest jumps
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: python scripts/inspect_jumps.py
+      - name: Point or route?
+        env:
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: python scripts/diagnose_jumps.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jumps
+          path: |
+            outputs/jump_inspection.csv
+            outputs/jump_diagnosis.csv
+
   # Euclidean only, so no network download and no JVM heap pressure.
   tessellation:
     if: ${{ inputs.jobs == 'all' || inputs.jobs == 'tessellation' }}
@@ -112,7 +146,7 @@ jobs:
             outputs/tessellation_summary.csv
 
   commit-results:
-    needs: [soundness, lipschitz, tessellation]
+    needs: [soundness, lipschitz, tessellation, jumps]
     if: ${{ always() && inputs.commit_results }}
     runs-on: ubuntu-latest
     permissions:
