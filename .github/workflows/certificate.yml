@@ -31,6 +31,10 @@ jobs:
     if: ${{ inputs.jobs == 'all' || inputs.jobs == 'soundness' }}
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        city: [london, bayarea, bengaluru]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -41,18 +45,27 @@ jobs:
         with:
           distribution: temurin
           java-version: "21"
-      - run: pip install -r requirements.txt
-      - name: Fetch London network + GTFS
-        run: python scripts/fetch_data.py --only london
+      - run: pip install -r requirements.txt osmium
+      - name: Fetch network + feeds
+        run: python scripts/fetch_data.py --only ${{ matrix.city }}
+      - name: Crop Bengaluru to the city extent
+        if: ${{ matrix.city == 'bengaluru' }}
+        run: python scripts/crop_bengaluru.py
+      - name: Crop the Bay Area to the SF extent
+        if: ${{ matrix.city == 'bayarea' }}
+        run: python scripts/crop_bayarea.py
       - name: Certificate soundness, Lipschitz vs level-set bands
         env:
+          CITY: ${{ matrix.city }}
           N_INSTANCES: ${{ inputs.n_instances }}
           JAVA_TOOL_OPTIONS: -Xmx8g
-        run: python scripts/run_certificate_soundness.py
+        run: |
+          python scripts/run_certificate_soundness.py
+          mv outputs/certificate_soundness.csv outputs/certificate_soundness_${{ matrix.city }}.csv
       - uses: actions/upload-artifact@v4
         with:
-          name: certificate_soundness
-          path: outputs/certificate_soundness.csv
+          name: certificate_soundness_${{ matrix.city }}
+          path: outputs/certificate_soundness_${{ matrix.city }}.csv
 
   # Is the per-mode Lipschitz constant valid on real multimodal surfaces at all?
   lipschitz:

@@ -26,9 +26,14 @@ from fairmp.scenarios import assign_modes, sample_origins
 from fairmp.tessellation import make_tessellation
 from fairmp.travel_time import R5_MODE, CachedEvaluator, PrecomputedBackend, R5Backend
 
-OSM = os.path.join(ROOT, "data", "london", "network.osm.pbf")
-GTFS = [os.path.join(ROOT, "data", "london", "gtfs", "london_bus.zip")]
-DEPARTURE = "2026-09-16 08:30:00"
+sys.path.insert(0, os.path.join(ROOT, "scripts"))
+from cities import paths as city_paths, pick_departure
+
+CITY = os.environ.get("CITY", "london")
+OSM, GTFS = city_paths(CITY)
+# Detected from the feeds rather than hard-coded: a departure outside the validity
+# window silently yields no transit service and falls back to walking.
+DEPARTURE = pick_departure(CITY)
 
 COARSE, FINE = 8, 9
 K_BANDS = 40
@@ -109,7 +114,7 @@ def empirical_lipschitz(surfaces, cands, n_users, quantile=99.0):
 
 
 def run_instance(r5, seed, departure, rows):
-    origins = sample_origins("london", N_USERS, seed=seed, spread="clustered",
+    origins = sample_origins(CITY, N_USERS, seed=seed, spread="clustered",
                              clusters=2, cluster_sd_deg=0.04)
     modes = assign_modes(N_USERS, "mixed", seed=seed)
     tess = make_tessellation("h3", centroid(origins))

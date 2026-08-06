@@ -57,7 +57,14 @@ def _bbox_xy(proj: Projection, poly):
 class Tessellation:
 
     name = "abstract"
-    exact_nesting = False
+
+    # Whether the pattern admits an exact parent/child hierarchy at *some* aperture.
+    # Square and triangular lattices do at integer aperture; H3 and 4.8.8 do at none.
+    # Levels here are pinned to the H3 area ladder so candidate budgets are comparable
+    # across patterns, which makes the level ratio sqrt(7) and leaves every pattern
+    # without exact nesting in practice. children() is therefore centre-containment and
+    # refine() adds a neighbour ring to cover the seam. See 16-octagon-indexing.md.
+    admits_exact_refinement = False
 
     def cells_in(self, poly, level: int) -> list[tuple[str, LatLng]]:
         raise NotImplementedError
@@ -110,7 +117,7 @@ class Tessellation:
 class H3Tessellation(Tessellation):
 
     name = "h3"
-    exact_nesting = False
+    admits_exact_refinement = False
 
     def cells_in(self, poly, level):
         outer = [(lat, lng) for lng, lat in poly.exterior.coords]
@@ -193,7 +200,7 @@ class _Lattice(Tessellation):
 class SquareTessellation(_Lattice):
 
     name = "square"
-    exact_nesting = True
+    admits_exact_refinement = True
     n_neighbors = 4
 
     def __init__(self, anchor, diagonal: bool = False):
@@ -250,7 +257,7 @@ class SquareTessellation(_Lattice):
 class TruncatedSquareTessellation(_Lattice):
 
     name = "trunc_square"
-    exact_nesting = False
+    admits_exact_refinement = False
 
     def __init__(self, anchor):
         super().__init__(anchor)
@@ -316,7 +323,7 @@ class TruncatedSquareTessellation(_Lattice):
 class TriangularTessellation(_Lattice):
 
     name = "triangle"
-    exact_nesting = True
+    admits_exact_refinement = True
     n_neighbors = 3
 
     def pitch(self, level):
@@ -385,7 +392,7 @@ class TriangularTessellation(_Lattice):
 class PoissonDiskTessellation(_Lattice):
 
     name = "poisson"
-    exact_nesting = False
+    admits_exact_refinement = False
 
     def __init__(self, anchor, seed: int = 0):
         super().__init__(anchor)

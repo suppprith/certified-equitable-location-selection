@@ -24,8 +24,34 @@ from fairmp.scenarios import assign_modes, sample_origins
 from fairmp.tessellation import make_tessellation
 from fairmp.travel_time import CachedEvaluator, R5Backend
 
-from run_real_bands import (COARSE, DEPARTURE, FINE, GTFS, OSM, empirical_lipschitz,
+from run_real_bands import (CITY, COARSE, DEPARTURE, FINE, GTFS, OSM, empirical_lipschitz,
                             precompute)
+
+import geopandas as gpd
+from shapely.geometry import Point
+from fairmp.travel_time import R5_MODE
+
+
+def time_routing(r5, origins, modes, cands, departure):
+    """Wall-clock cost of actually obtaining travel times for this candidate set.
+
+    The query counts elsewhere are an accounting under a cost model where band membership
+    is cheap and per-point times are not, which is how a metered isochrone endpoint bills
+    and is not how a self-hosted router behaves. This measures the model-free quantity: how
+    long the routing engine takes for a given number of destinations. It is the number that
+    decides whether the efficiency claim survives outside the paid-API regime."""
+    r5py = r5._r5py
+    dest = gpd.GeoDataFrame({"id": [f"c{i}" for i in range(len(cands))]},
+                            geometry=[Point(p.lng, p.lat) for p in cands], crs="EPSG:4326")
+    t0 = time.time()
+    for i, (o, m) in enumerate(zip(origins, modes)):
+        tmodes = [getattr(r5py.TransportMode, x) for x in R5_MODE[m[0]]]
+        src = gpd.GeoDataFrame({"id": [f"o{i}"]},
+                               geometry=[Point(o.lng, o.lat)], crs="EPSG:4326")
+        ttm = r5py.TravelTimeMatrix(r5.network, origins=src, destinations=dest,
+                                    departure=departure, transport_modes=tmodes)
+        ttm.compute_travel_times() if hasattr(ttm, "compute_travel_times") else ttm
+    return time.time() - t0
 
 K_BANDS = int(os.environ.get("K_BANDS", "60"))
 SEEDS = range(int(os.environ.get("N_INSTANCES", "12")))
@@ -106,6 +132,22 @@ def main():
         row["band_sweeps"] = info.get("sweeps", -1)
         row["band_point_queries"] = info.get("point_queries", -1)
 
+        # Model-free cost. The band search needs the whole field, so it pays for a sweep
+        # over every candidate. The Lipschitz search touches roughly
+        # routing_calls / N distinct candidates, which on a self-hosted router would be
+        # served by a matrix over that subset rather than by individual queries. Timing
+        # both on the real engine is what tells us whether the query-count advantage is a
+        # real saving or an artefact of the billing model assumed.
+        fine_pts = [pt for _c, pt in tess.cells_in(poly, FINE)]
+        n_lip = min(len(fine_pts),
+                    max(1, int(round(row["lip_assumed_calls"] / max(1, len(origins))))))
+        rs = np.random.default_rng(seed)
+        lip_subset = [fine_pts[i] for i in rs.choice(len(fine_pts), size=n_lip, replace=False)]
+        row["t_band_full_sweep_s"] = round(time_routing(r5, origins, modes, fine_pts, departure), 3)
+        row["t_lip_subset_s"] = round(time_routing(r5, origins, modes, lip_subset, departure), 3)
+        row["n_fine"] = len(fine_pts)
+        row["n_lip_distinct"] = n_lip
+
         rows.append(row)
         print("  seed %2d truth=%9.3f | assumed %9.3f %+8.3f%% unsound=%-5s | "
               "empirical %9.3f %+8.3f%% unsound=%-5s | band %9.3f %+8.3f%% unsound=%-5s "
@@ -137,7 +179,18 @@ def main():
                  (df.band_reachable + df.band_unreachable).mean()))
         print("  cost: %.0f sweeps and %.0f point queries per instance"
               % (df.band_sweeps.mean(), df.band_point_queries.mean()))
-    print("\nwrote outputs/certificate_soundness.csv")
+    if "t_band_full_sweep_s" in df:
+        tb, tl = df.t_band_full_sweep_s.mean(), df.t_lip_subset_s.mean()
+        print("\nModel-free cost on the routing engine itself, mean seconds per instance")
+        print("  band search, sweep over all %.0f candidates:      %6.2f s" % (df.n_fine.mean(), tb))
+        print("  Lipschitz search, matrix over %.0f candidates:    %6.2f s"
+              % (df.n_lip_distinct.mean(), tl))
+        print("  ratio band/Lipschitz: %.2fx" % (tb / tl if tl > 0 else float('nan')))
+        print("\n  Read alongside the query counts above. Those assume band membership is")
+        print("  cheap and per-point times are not, which is how a metered isochrone")
+        print("  endpoint bills. On this self-hosted router a sweep returns exact times")
+        print("  directly, so the query-count advantage does not translate into wall clock.")
+    print("\nwrote outputs/certificate_soundness.csv (city=%s, departure=%s)" % (CITY, DEPARTURE))
 
 
 if __name__ == "__main__":
