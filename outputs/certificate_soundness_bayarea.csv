@@ -1,3 +1,4 @@
 seed,truth,candidates,lip_assumed_value,lip_assumed_certified,lip_assumed_excess_pct,lip_assumed_UNSOUND,lip_assumed_calls,lip_empirical_value,lip_empirical_certified,lip_empirical_excess_pct,lip_empirical_UNSOUND,lip_empirical_calls,band_value,band_certified,band_excess_pct,band_UNSOUND,band_evaluated,band_reachable,band_unreachable,band_eval_frac,band_eval_frac_all,band_sweeps,band_point_queries,t_band_full_sweep_s,t_lip_subset_s,n_fine,n_lip_distinct
-4,1423.2,720,1423.2,True,0.0,False,3625,1423.2,True,0.0,False,3660,1423.2,True,0.0,False,32,75,645,0.4267,0.0444,5,160,0.778,0.718,720,720
-7,314.4,772,314.4,True,0.0,False,3270,314.4,True,0.0,False,3315,314.4,True,0.0,False,6,260,512,0.0231,0.0078,5,30,0.755,0.765,772,654
+4,69.04,540,69.04,True,0.0,False,1770,69.04,True,0.0,False,1950,69.04,True,0.0,False,13,330,210,0.0394,0.0241,5,65,0.581,0.486,540,354
+7,134.8,492,134.8,True,0.0,False,1370,134.8,True,0.0,False,1420,134.8,True,0.0,False,5,412,80,0.0121,0.0102,5,25,0.74,0.645,492,274
+16,35.44,350,35.44,True,0.0,False,1400,35.44,True,0.0,False,1570,35.44,True,0.0,False,3,201,149,0.0149,0.0086,5,15,0.48,0.455,350,280
