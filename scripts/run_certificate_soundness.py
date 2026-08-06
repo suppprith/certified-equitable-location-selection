@@ -61,14 +61,14 @@ PARAMS = Params(coarse_res=COARSE, fine_res=FINE, k_c=400, k_refine=10, ring=1, 
 
 def main():
     departure = pd.Timestamp(DEPARTURE)
-    print("loading London network...", flush=True)
+    print("loading %s network (departure %s)..." % (CITY, DEPARTURE), flush=True)
     t0 = time.time()
     r5 = R5Backend(OSM, GTFS)
     print("  ready in %.0fs" % (time.time() - t0), flush=True)
 
     rows = []
     for seed in SEEDS:
-        origins = sample_origins("london", N_USERS, seed=seed, spread="clustered",
+        origins = sample_origins(CITY, N_USERS, seed=seed, spread="clustered",
                                  clusters=2, cluster_sd_deg=0.04)
         modes = assign_modes(N_USERS, "mixed", seed=seed)
         tess = make_tessellation("h3", centroid(origins))
@@ -161,6 +161,8 @@ def main():
     df = pd.DataFrame(rows)
     os.makedirs("outputs", exist_ok=True)
     df.to_csv("outputs/certificate_soundness.csv", index=False)
+    if df.empty:
+        raise SystemExit("no solvable instances for %s; nothing to report" % CITY)
 
     print("\nAdaptive certified search on real London multimodal surfaces, %d instances" % len(df))
     print("UNSOUND = the run reported itself certified while returning a point strictly")
@@ -168,7 +170,7 @@ def main():
     for name in ("lip_assumed", "lip_empirical", "band"):
         c = df["%s_certified" % name]
         u = df["%s_UNSOUND" % name]
-        e = df["%s_excess_pct" % name]
+        e = df.loc[c, "%s_excess_pct" % name]  # undefined where the run declined to certify
         print("  %-14s certified %5.1f%%   UNSOUND %5.1f%% (%d)   mean excess over optimum %+7.3f%%"
               % (name, 100 * c.mean(), 100 * u.mean(), int(u.sum()), e.mean()))
     if "band_eval_frac" in df:

@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        city: [london, bayarea, bengaluru]
+        city: [london, bayarea, tokyo]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -48,9 +48,6 @@ jobs:
       - run: pip install -r requirements.txt osmium
       - name: Fetch network + feeds
         run: python scripts/fetch_data.py --only ${{ matrix.city }}
-      - name: Crop Bengaluru to the city extent
-        if: ${{ matrix.city == 'bengaluru' }}
-        run: python scripts/crop_bengaluru.py
       - name: Crop the Bay Area to the SF extent
         if: ${{ matrix.city == 'bayarea' }}
         run: python scripts/crop_bayarea.py

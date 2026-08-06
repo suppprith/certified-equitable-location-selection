@@ -17,12 +17,14 @@ CITIES = {
         "multimodal": True,
     },
     "bayarea": {
-        "osm": "bayarea/network.osm.pbf",
+        "osm": "bayarea/sf_city.osm.pbf",   # produced by crop_bayarea.py
         "gtfs": ["bayarea/gtfs/bart.zip", "bayarea/gtfs/muni.zip"],
         "multimodal": True,
     },
+    # Bengaluru's OSM extract is a manual step (karnataka.osm.pbf, then crop), so it is
+    # not reachable from CI. Kept for local runs only.
     "bengaluru": {
-        "osm": "bengaluru/network.osm.pbf",
+        "osm": "bengaluru/blr_city.osm.pbf",
         "gtfs": [],
         "multimodal": False,
     },
