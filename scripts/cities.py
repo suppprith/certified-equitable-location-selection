@@ -36,6 +36,30 @@ CITIES = {
 }
 
 
+# Origins must be sampled inside the network the router actually loaded. The module-level
+# CITY_BBOX entries are wider than the cropped extracts, so sampling from them places
+# origins where there is no road data and the instance is discarded as unsolvable. The Bay
+# Area box in particular reaches ~15 km east across the bay while the cropped network stops
+# at -122.37, which reduced a 30-instance run to 3. These match the crop scripts.
+SAMPLE_BBOX = {
+    "bayarea": (37.73, -122.51, 37.81, -122.39),    # crop_bayarea.py: -122.53..-122.37
+    "bengaluru": (12.90, 77.52, 13.06, 77.68),      # crop_bengaluru.py
+}
+
+
+def sample_bbox(city: str):
+    return SAMPLE_BBOX.get(city)
+
+
+def apply_sample_bbox(city: str):
+    """Narrow scenarios.CITY_BBOX to the loaded network before sampling origins."""
+    b = SAMPLE_BBOX.get(city)
+    if b:
+        from fairmp.scenarios import CITY_BBOX
+        CITY_BBOX[city] = b
+    return b
+
+
 def paths(city: str):
     cfg = CITIES[city]
     osm = os.path.join(ROOT, "data", *cfg["osm"].split("/"))

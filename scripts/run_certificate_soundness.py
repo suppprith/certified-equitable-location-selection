@@ -60,6 +60,10 @@ PARAMS = Params(coarse_res=COARSE, fine_res=FINE, k_c=400, k_refine=10, ring=1, 
 
 
 def main():
+    from cities import apply_sample_bbox
+    nb = apply_sample_bbox(CITY)
+    if nb:
+        print("sampling origins inside the loaded network extent %s" % (nb,), flush=True)
     departure = pd.Timestamp(DEPARTURE)
     print("loading %s network (departure %s)..." % (CITY, DEPARTURE), flush=True)
     t0 = time.time()
