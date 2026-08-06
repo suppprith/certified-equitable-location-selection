@@ -35,11 +35,18 @@ def sample_origins(city, n, seed=0, spread="uniform", clusters=2, cluster_sd_deg
             pts.append(LatLng(lat, lng))
     return pts
 
-def assign_modes(n, mix="mixed", seed=0):
-
+def assign_modes(n, mix="mixed", seed=0, pool=None):
+    """pool restricts which modes may be drawn. A city with no schedule feed must not be
+    given transit users: the router silently falls back to walking, their reachable set
+    collapses, and the instance is discarded for having no commonly reachable candidate.
+    That is what reduced a 25-instance Bay Area run to 2 usable instances."""
     rng = random.Random(seed)
-    chosen = [rng.choice(MODES) for _ in range(n)] if mix == "mixed" else [mix] * n
+    options = pool or MODES
+    chosen = [rng.choice(options) for _ in range(n)] if mix == "mixed" else [mix] * n
     return [[m] for m in chosen]
+
+
+ROAD_MODES = ["driving", "walking", "cycling"]
 
 def assign_modes_with_choice(n, seed=0, frac_choice=0.4):
 

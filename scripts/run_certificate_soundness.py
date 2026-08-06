@@ -20,7 +20,7 @@ from fairmp.bands import band_certified_search, make_thresholds
 from fairmp.candidates import polyfill_centroids, region_polygon
 from fairmp.certificate import certified_search, euclidean_lipschitz
 from fairmp.geo import centroid
-from fairmp.scenarios import assign_modes, sample_origins
+from fairmp.scenarios import ROAD_MODES, assign_modes, sample_origins
 from fairmp.tessellation import make_tessellation
 from fairmp.travel_time import CachedEvaluator, R5Backend
 
@@ -69,8 +69,10 @@ def main():
     rows = []
     for seed in SEEDS:
         origins = sample_origins(CITY, N_USERS, seed=seed, spread="clustered",
-                                 clusters=2, cluster_sd_deg=0.04)
-        modes = assign_modes(N_USERS, "mixed", seed=seed)
+                                 clusters=2, cluster_sd_deg=float(os.environ.get("SPREAD", "0.03")))
+        # A city with no schedule feed cannot be given transit users; see assign_modes.
+        modes = assign_modes(N_USERS, "mixed", seed=seed,
+                             pool=None if GTFS else ROAD_MODES)
         tess = make_tessellation("h3", centroid(origins))
         poly = region_polygon(origins)
 
@@ -164,7 +166,8 @@ def main():
     if df.empty:
         raise SystemExit("no solvable instances for %s; nothing to report" % CITY)
 
-    print("\nAdaptive certified search on real London multimodal surfaces, %d instances" % len(df))
+    print("\nAdaptive certified search on real %s surfaces, %d of %d instances solvable"
+          % (CITY, len(df), len(SEEDS)))
     print("UNSOUND = the run reported itself certified while returning a point strictly")
     print("worse than the true optimum over the same candidate set.\n")
     for name in ("lip_assumed", "lip_empirical", "band"):
