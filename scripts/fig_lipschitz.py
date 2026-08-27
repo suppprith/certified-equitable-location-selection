@@ -9,6 +9,9 @@ sys.path.insert(0, ROOT)
 
 import matplotlib
 matplotlib.use("Agg")
+# IEEE PDF eXpress rejects Type 3 fonts, which is matplotlib's PDF default.
+matplotlib.rcParams["pdf.fonttype"] = 42
+matplotlib.rcParams["ps.fonttype"] = 42
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
