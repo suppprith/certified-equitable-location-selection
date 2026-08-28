@@ -1,7 +1,7 @@
-# Fair Multimodal Meeting Points
+# Certified Equitable Location Selection
 
 Reference implementation and reproducible experiments for the paper
-*Minimizing Travel-Time Variance for Fair Multimodal Meeting Points: An H3-Indexed Algorithm*.
+*Certified Search for Equitable Location Selection on Multimodal Networks*.
 
 Given `N` users who each travel by a possibly different mode (walking, cycling, driving,
 public transit), the algorithm selects a single location that minimises the **variance of
