@@ -3,17 +3,40 @@
 Reference implementation and reproducible experiments for the paper
 *Certified Search for Equitable Location Selection on Multimodal Networks*.
 
-Given `N` users who each travel by a possibly different mode (walking, cycling, driving,
-public transit), the algorithm selects a single location that minimises the **variance of
-their multimodal travel times**, so no one carries a much longer trip than the rest. The
-search discretises the region with the [H3](https://h3geo.org/) hexagonal grid and runs
-coarse-to-fine over candidate cells with memoised travel times, reaching the full
-fine-grid optimum while issuing far fewer routing queries.
+Given `N` weighted origins whose occupants travel by different modes (walking, cycling,
+driving, public transit), the search selects the single location that minimises an equity
+functional of the resulting travel times. The travel-time field is treated as an oracle:
+it can only be sampled, and every sample is billed. The search runs coarse to fine over a
+tessellation of the region with memoised travel times, and returns with the chosen point a
+**certificate** that no unevaluated candidate can beat it.
 
-The same search is metric-agnostic: it also optimises the **Kolm-Pollak equally-distributed-
-equivalent (EDE)** travel time, and a weight on the mean term traces the variance-vs-mean
-Pareto front. The method is applied to three settings: social meeting points, ride-share
-pickup, and demand-weighted micro-fulfilment (dark-store) siting.
+Three properties follow from how that certificate is built.
+
+**Objective-agnostic.** The certificate needs one quantity, the minimum of the objective
+over a box of travel-time vectors. Any objective supplying it plugs into the same search
+with the same guarantee. `objectives.py` gives exact box minima for variance, min-sum,
+min-max, range and the Kolm-Pollak EDE, and a lower bound for the coefficient of variation.
+
+**Tessellation-agnostic.** The argument refers to a cell only through its circumradius, so
+the discretisation is a parameter rather than a commitment. `tessellation.py` implements
+six patterns (`h3`, `square`, `octile`, `triangle`, `trunc_square`, `poisson`), which at
+matched candidate density are indistinguishable in optimality gap.
+
+**Two bounds, one of which does not hold.** Bounding a cell by a per-mode Lipschitz
+constant is the obvious choice and is exactly tight on a Euclidean backend. On real
+multimodal networks it is not valid, and recalibrating the constant from data does not
+repair it; `run_lipschitz_audit.py` measures this. `bands.py` bounds by level sets
+instead, which assumes no smoothness, reaches the same optimum, and certifies every
+instance where the Lipschitz bound certifies 96.8%.
+
+The query saving from level sets is a property of the cost model, not of the algorithm.
+Where a one-to-all sweep is cheap, as on a self-hosted router, the sweep already returns
+exact times and the level-set search is a few percent slower in wall-clock time. The
+saving is real under per-element billing, where band membership costs one call and a
+matrix bills per element. Both sides are measured here.
+
+A group meeting in a city is the smallest instance and serves as the running example;
+weighting the origins by population turns the same problem into facility siting.
 
 ## Install
 
@@ -32,15 +55,15 @@ docker build -t fairmp . && docker run --rm fairmp   # runs the unit tests
 
 ## Quickstart
 
-Compute a fair meeting point for a synthetic group on the data-free backend:
+Select a location for a synthetic group on the data-free backend:
 
 ```python
 from fairmp.scenarios import sample_origins, assign_modes
 from fairmp.algorithm import Params, fair_meeting_point
 from fairmp.travel_time import EuclideanBackend, CachedEvaluator
 
-origins = sample_origins("london", 5, seed=0)   # five users in a local area
-modes = assign_modes(5, "mixed", seed=0)         # one mode each
+origins = sample_origins("london", 5, seed=0)   # five origins in a local area
+modes = assign_modes(5, "mixed", seed=0)         # a mode set each
 ev = CachedEvaluator(EuclideanBackend())
 best, runners_up, _, _ = fair_meeting_point(origins, modes, ev, Params())
 print(best.point, [round(t, 1) for t in best.times])
@@ -67,14 +90,26 @@ python scripts/run_significance.py   # 30 instances/scenario, 95% CIs + paired W
 2. Run the real-network experiments (each builds the routing network once):
 
 ```
-python scripts/run_london.py        # London social meetup (multimodal) + gamma/Pareto
-python scripts/run_bengaluru.py     # Bengaluru social meetup (road-only)
-python scripts/run_bayarea.py       # San Francisco social meetup (multimodal, BART rail)
-python scripts/run_tokyo.py         # Tokyo social meetup (road-only)
-python scripts/run_rideshare.py     # ride-share walk-access pickup
-python scripts/run_darkstore.py     # demand-weighted dark-store siting
+# the certificate results
+python scripts/run_lipschitz_audit.py    # does the Lipschitz premise hold? (it does not)
+python scripts/run_certificate.py        # certified search, both bounds, against exhaustive
+python scripts/run_certificate_soundness.py
+python scripts/run_real_bands.py         # level-set bounds on real surfaces
+python scripts/run_tessellation.py       # six patterns at matched candidate density
+
+# the fairness comparisons
+python scripts/run_london.py        # London, multimodal, + gamma/Pareto
+python scripts/run_bengaluru.py     # Bengaluru, road-only
+python scripts/run_bayarea.py       # San Francisco, multimodal, BART rail
+python scripts/run_tokyo.py         # Tokyo, road-only
+python scripts/run_rideshare.py     # walk-access pickup
+python scripts/run_darkstore.py     # demand-weighted siting
 python scripts/run_adversarial.py   # river-crossing / mode-mismatch / linear stress tests
 ```
+
+`scripts/fig_lipschitz.py` draws the violation-rate figure from `lipschitz_audit.csv`.
+`scripts/inspect_jumps.py` and `scripts/diagnose_jumps.py` produce the discontinuity
+evidence: whether a short-range jump is a real multimodal barrier or a snapping artefact.
 
 The bbbike OSM extracts for San Francisco and Tokyo are re-written and cropped to the
 routable city region with `scripts/crop_bayarea.py` and `scripts/crop_tokyo.py` before use.
@@ -92,9 +127,14 @@ python scripts/make_paper_tables.py      # writes outputs/paper_tables.tex
 
 | File | What it contains |
 | --- | --- |
-| `london.csv` | Social meetup, London multimodal network: every method's variance, Jain, Gini, EDE, mean, max, optimality gap. |
+| `lipschitz_audit.csv` | Per-mode Lipschitz violation rates by candidate separation, over 72 real travel-time surfaces, plus the recalibrated constant and whether it fares better. |
+| `certificate.csv`, `certificate_soundness*.csv` | Certified search against an exhaustive optimum: certified share, suboptimal share, point queries and sweeps, for the Lipschitz and level-set bounds. |
+| `real_bands.csv` | Level-set band structure on real surfaces. |
+| `tessellation.csv`, `tessellation_summary.csv` | Six candidate patterns at matched density: optimality gap split into discretisation cost and search failure. |
+| `jump_inspection.csv`, `jump_diagnosis.csv` | Short-range travel-time jumps, and whether each is mode-specific (a real barrier) or common to all modes (a snapping artefact). |
+| `london.csv` | Location selection, London multimodal network: every method's variance, Jain, Gini, EDE, mean, max, optimality gap. |
 | `london_pareto.csv` | Gamma sweep: the operating point matching min-sum's mean travel time and the variance reduction there. |
-| `bengaluru.csv`, `bayarea.csv`, `tokyo.csv` | Social meetup on the Bengaluru (road-only), San Francisco (multimodal), and Tokyo (road-only) networks, each with a `_pareto` variant. |
+| `bengaluru.csv`, `bayarea.csv`, `tokyo.csv` | Same comparison on the Bengaluru (road-only), San Francisco (multimodal), and Tokyo (road-only) networks, each with a `_pareto` variant. |
 | `rideshare.csv` | Ride-share pickup, walk-access times. |
 | `darkstore.csv` | Dark-store siting, cycling times, demand-weighted metrics (w-variance, courier Gini, within-SLA share, w-EDE). |
 | `adversarial.csv` | River-crossing, mode-mismatch, and linear topologies. |
@@ -109,8 +149,12 @@ fairmp/
   geo.py          haversine, centroid, spread
   metrics.py      variance, Jain, Gini, Kolm-Pollak EDE, weighted variants, feasibility
   travel_time.py  Backend ABC; EuclideanBackend; R5Backend (r5py); cached evaluator
-  candidates.py   region bound, H3 polyfill, geometric prefilter, refinement
-  algorithm.py    coarse-to-fine fair meeting point (variance or EDE objective)
+  candidates.py   region bound, polyfill, geometric prefilter, refinement
+  tessellation.py h3, square, octile, triangle, truncated square, Poisson-disk
+  objectives.py   box-computable objective family and its exact box minima
+  certificate.py  Lipschitz bounds, certified coarse-to-fine search
+  bands.py        level-set bounds: thresholds, band membership, certified search
+  algorithm.py    coarse-to-fine location selection (variance or EDE objective)
   baselines.py    centroid, weighted centroid, Weiszfeld, min-sum, min-max, min-range,
                   random, exhaustive (variance and EDE references)
   scenarios.py    synthetic instance generator
