@@ -20,6 +20,10 @@ on:
         default: all
         type: choice
         options: [all, evaluation, soundness, lipschitz, tessellation, jumps]
+      cities:
+        description: Cities for the evaluation job, as a JSON list
+        default: '["london", "bayarea", "tokyo"]'
+        type: string
 
 permissions:
   contents: read
@@ -35,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        city: [london, bayarea, tokyo]
+        city: ${{ fromJSON(inputs.cities) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

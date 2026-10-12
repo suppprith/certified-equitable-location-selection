@@ -18,7 +18,9 @@ AUTO = [
 
     ("bayarea/network.osm.pbf", "https://download.bbbike.org/osm/bbbike/SanFrancisco/SanFrancisco.osm.pbf"),
     ("bayarea/gtfs/bart.zip", "https://www.bart.gov/dev/schedules/google_transit.zip"),
-    ("bayarea/gtfs/muni.zip", "https://gtfs.sfmta.com/transitdata/google_transit.zip"),
+    # SFMTA retired gtfs.sfmta.com; this is the producer URL listed on the Mobility
+    # Database (feed mdb-2886) as of October 2026
+    ("bayarea/gtfs/muni.zip", "https://muni-gtfs.apps.sfmta.com/data/muni_gtfs-current.zip"),
 ]
 
 MANUAL = """

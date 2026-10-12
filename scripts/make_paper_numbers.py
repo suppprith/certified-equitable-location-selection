@@ -57,6 +57,12 @@ def boot_ci(x, stat=np.mean, n=4000):
     return tuple(np.percentile(vals, [2.5, 97.5]))
 
 
+def write_rows(name, macro, lines):
+    r"""Rows as a macro: \input inside a booktabs tabular breaks the following rule."""
+    with open(os.path.join(DEST, name), "w") as f:
+        f.write("\\newcommand{\\%s}{%%\n%s\n}\n" % (macro, "\n".join(lines)))
+
+
 def fmt_int(x):
     return "{:,}".format(int(round(x))).replace(",", "{,}")
 
@@ -121,7 +127,7 @@ print(summary.round(2).to_string())
 
 sound_by = {"lipschitz_assumed": "no", "lipschitz_assumed_screened": "no",
             "lipschitz_recalibrated_screened": "no", "polygon_contour": "no",
-            "alt": "yes$^{a}$"}
+            "alt": "no$^{a}$"}
 lines = []
 for key, label in order:
     if key not in summary.index:
@@ -133,8 +139,7 @@ for key, label in order:
     premise = sound_by.get(key, "yes")
     lines.append("%s & %s & %s & %s & %s & %s \\\\" % (
         label, fmt_int(r.pairs), sweeps, iso, pct(r.optimal, 0), premise))
-with open(os.path.join(DEST, "tab_search.tex"), "w") as f:
-    f.write("\n".join(lines) + "\n")
+write_rows("tab_search.tex", "RowsSearch", lines)
 
 for key, name in [("exhaustive", "Exh"), ("exhaustive_screened", "ExhScr"),
                   ("lipschitz_assumed", "LipSub"), ("lipschitz_assumed_screened", "LipScr"),
@@ -156,6 +161,14 @@ for key, name in [("exhaustive", "Exh"), ("exhaustive_screened", "ExhScr"),
     ev = var[var.method == key].evaluated
     if ev.notna().any():
         mac("Eval" + name, ev.mean(), ".1f")
+    # a returned point worse than the optimum, and no point at all, kept apart
+    d = var[var.method == key]
+    finite = np.isfinite(d.value)
+    mac("Wrong" + name, int((finite & ~d.optimal.astype(bool)).sum()))
+    mac("NoAnswer" + name, int((~finite).sum()))
+    worst = d.loc[finite & ~d.optimal.astype(bool), "excess_pct"]
+    if len(worst):
+        mac("WorstExcess" + name, worst.max(), ".0f")
 
 # ratios the text quotes
 def ratio(a, b, col="billed"):
@@ -238,8 +251,7 @@ for mode in modes:
     mac("LipRecRob" + mode.capitalize(), rec_rob, ".1f")
     mac("LipRecFactor" + mode.capitalize(), rec, ".1f")
     mac("LipSurf" + mode.capitalize(), len(d))
-with open(os.path.join(DEST, "tab_lipschitz.tex"), "w") as f:
-    f.write("\n".join(lines) + "\n")
+write_rows("tab_lipschitz.tex", "RowsLipschitz", lines)
 
 surf_viol = lip["b1.2_2_viol_robust"]
 mac("SurfAnyViolFar", int((surf_viol > 0).sum()))
@@ -299,8 +311,7 @@ for key, label in rules:
     lines.append("%s & %.0f & %.1f & %.3f & %.3f & %.1f & %.1f & %.1f & %s \\\\" % (
         label, *vals, pct(infeas, 1)))
     mac("Infeas" + RULE_TAG[key], pct(infeas, 1))
-with open(os.path.join(DEST, "tab_equity.tex"), "w") as f:
-    f.write("\n".join(lines) + "\n")
+write_rows("tab_equity.tex", "RowsEquity", lines)
 print("\nequity on %d instances where every rule is feasible" % len(common))
 print("\n".join(lines))
 
@@ -352,8 +363,7 @@ for pat, r in agg.iterrows():
     lo, hi = boot_ci(tess[tess.pattern == pat].quant_gap_pct)
     lines.append("%s & %.2f\\,[%.2f, %.2f] & %.2f & %.1f \\\\" % (
         names[pat], r.disc, lo, hi, r.heur, r.miss))
-with open(os.path.join(DEST, "tab_tess.tex"), "w") as f:
-    f.write("\n".join(lines) + "\n")
+write_rows("tab_tess.tex", "RowsTess", lines)
 wide = tess.pivot_table(index="inst", columns="pattern", values="quant_gap_pct").dropna()
 fr = stats.friedmanchisquare(*[wide[c] for c in wide.columns])
 mac("TessN", len(wide))
@@ -373,8 +383,14 @@ mac("TessExhCalls", fmt_int(agg.exh_calls.mean()))
 mac("TessHeurCalls", fmt_int(agg.heur_calls.mean()))
 mac("TessMissMin", agg.miss.min(), ".1f")
 mac("TessMissMax", agg.miss.max(), ".1f")
-mac("TessCertEqDisc", "yes" if np.allclose(tess.certified_gap_pct, tess.quant_gap_pct, atol=1e-3)
-    else "no")
+if "certified_value_raw" in tess:
+    tol = 1e-9 * tess.own_grid_opt_raw.abs().clip(lower=1.0)
+    hit = (tess.certified_value_raw <= tess.own_grid_opt_raw + tol)
+else:
+    hit = np.isclose(tess.certified_gap_pct, tess.quant_gap_pct, atol=1e-4)
+mac("TessCertHit", int(hit.sum()))
+mac("TessRuns", len(tess))
+print("certified search at its own grid optimum on %d of %d pattern runs" % (hit.sum(), len(tess)))
 print("\ndiscretisation\n", agg.round(3))
 print("Friedman chi2=%.2f p=%.3g on %d instances; best-worst spread %.3f [%.3f, %.3f]"
       % (fr.statistic, fr.pvalue, len(wide), spread, lo, hi))
