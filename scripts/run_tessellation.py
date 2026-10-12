@@ -89,6 +89,9 @@ def run_pattern(name, origins, modes, backend, ref_var, ref_pt):
         "certified_rounds": cert.get("rounds", -1),
         "certified_calls": cert.get("routing_calls", -1),
         "certified_gap_pct": round(pct(cert.get("v_star", float("nan")), ref_var), 4),
+        # unrounded, for the soundness check: comparing rounded values flags false alarms
+        "certified_value_raw": cert.get("v_star", float("nan")),
+        "own_grid_opt_raw": own_opt,
     }
 
 
@@ -150,8 +153,10 @@ def main():
     # The certificate claims optimality over the pattern's OWN fine grid, never over the
     # finer reference grid. Comparing against ref_opt conflates the discretization gap with
     # a soundness failure and reports false alarms.
-    v_star = df.ref_opt * (1 + df.certified_gap_pct / 100.0)
-    bad = df[(df.certified) & (v_star > df.own_grid_opt + 1e-6)]
+    # Compared on unrounded values with a relative tolerance. Reconstructing v_star from
+    # the rounded gap, as an earlier version did, reported hundreds of false violations.
+    tol = 1e-9 * df.own_grid_opt_raw.abs().clip(lower=1.0)
+    bad = df[(df.certified) & (df.certified_value_raw > df.own_grid_opt_raw + tol)]
     print("certificate soundness violations vs own grid: %d  [must be 0]" % len(bad))
     print("mean certified gap vs the finer reference grid: %.3f%%  [discretization, not a failure]"
           % df[df.certified].certified_gap_pct.mean())
