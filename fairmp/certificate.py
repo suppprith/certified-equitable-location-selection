@@ -8,6 +8,7 @@ from . import metrics
 from .algorithm import Area, Params, fair_meeting_point, resolve_tessellation
 from .candidates import region_polygon
 from .geo import haversine_km
+from .objectives import variance_min
 from .travel_time import EUCLIDEAN_SPEED_KMH
 
 
@@ -21,28 +22,8 @@ def euclidean_lipschitz(modes_list, detour: float = 1.3) -> list[float]:
 
 
 def min_variance_over_box(lo: list[float], hi: list[float]) -> float:
-
-    if max(lo) <= min(hi):
-        return 0.0
-
-    def phi(mu):
-        s = 0.0
-        for a, b in zip(lo, hi):
-            if mu < a:
-                s += (a - mu) ** 2
-            elif mu > b:
-                s += (mu - b) ** 2
-        return s
-
-    left, right = min(lo), max(hi)
-    for _ in range(80):
-        m1 = left + (right - left) / 3
-        m2 = right - (right - left) / 3
-        if phi(m1) <= phi(m2):
-            right = m2
-        else:
-            left = m1
-    return phi((left + right) / 2) / len(lo)
+    """Unweighted exact box minimum; see objectives.variance_min."""
+    return variance_min(lo, hi)
 
 
 def _uncovered_by_parent(origins, params: Params, evaluated_fine: set[str], tess):

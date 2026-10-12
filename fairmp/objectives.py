@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+from bisect import bisect_left, bisect_right
+from itertools import accumulate
 
 from . import metrics
 
@@ -11,38 +13,67 @@ from . import metrics
 # coefficient of variation admits a lower bound only.
 
 
-def _finite(lo, hi):
-    return all(math.isfinite(x) for x in lo) and all(math.isfinite(x) for x in hi)
+# Relative slack subtracted from the variance bound. The minimizer is found in closed form,
+# but the value is still computed in floating point; without the slack, rounding could put
+# the bound a few ulps above the true minimum and it would no longer be a lower bound.
+BOUND_SLACK = 1e-9
+
+
+def _phi(mu, lo, hi, w):
+    s = 0.0
+    for a, b, wi in zip(lo, hi, w):
+        if mu < a:
+            s += wi * (a - mu) ** 2
+        elif mu > b:
+            s += wi * (mu - b) ** 2
+    return s
 
 
 def variance_min(lo, hi, weights=None):
-    """Exact. Variance is min over mu of the mean squared deviation, so exchanging the two
-    minimizations leaves an independent clamp per coordinate and a convex problem in mu."""
-    if not _finite(lo, hi):
+    """Exact, with weights. Weighted variance is min over mu of sum w_i (t_i - mu)^2 / W, so
+    exchanging the two minimizations leaves phi(mu) = sum w_i dist(mu, [l_i, h_i])^2 / W.
+
+    phi is convex and piecewise quadratic with breakpoints at the interval ends. Between two
+    consecutive breakpoints the sets {i: l_i > mu} and {i: h_i < mu} are fixed, so phi is a
+    single quadratic there and its minimizer is the weighted mean of the active ends,
+    clamped to the piece. The minimum of phi is the smallest of these per-piece minima, so
+    no iterative search is involved. An infinite upper end (an open band) never becomes
+    active from above and is handled exactly rather than by giving up."""
+    n = len(lo)
+    if n == 0:
+        return 0.0
+    w = list(weights) if weights else [1.0] * n
+    tot = sum(w)
+    if tot <= 0:
         return 0.0
     if max(lo) <= min(hi):
         return 0.0
-    w = weights or [1.0] * len(lo)
-    tot = sum(w)
 
-    def phi(mu):
-        s = 0.0
-        for a, b, wi in zip(lo, hi, w):
-            if mu < a:
-                s += wi * (a - mu) ** 2
-            elif mu > b:
-                s += wi * (mu - b) ** 2
-        return s
+    lo_sorted = sorted(zip(lo, w))
+    hi_sorted = sorted((b, wi) for b, wi in zip(hi, w) if math.isfinite(b))
+    ls = [a for a, _ in lo_sorted]
+    hs = [b for b, _ in hi_sorted]
+    # suffix sums over lower ends (active when l_i > mu), prefix sums over upper ends
+    # (active when h_i < mu)
+    lw = list(accumulate(wi for _, wi in reversed(lo_sorted)))[::-1] + [0.0]
+    lwx = list(accumulate(wi * a for a, wi in reversed(lo_sorted)))[::-1] + [0.0]
+    hw = [0.0] + list(accumulate(wi for _, wi in hi_sorted))
+    hwx = [0.0] + list(accumulate(wi * b for b, wi in hi_sorted))
 
-    left, right = min(lo), max(hi)
-    for _ in range(100):
-        m1 = left + (right - left) / 3
-        m2 = right - (right - left) / 3
-        if phi(m1) <= phi(m2):
-            right = m2
-        else:
-            left = m1
-    return phi((left + right) / 2) / tot
+    # the minimizer lies between the smallest lower end and the largest finite end
+    left = ls[0]
+    right = max([ls[-1]] + hs)
+    knots = sorted({x for x in ls + hs if left <= x <= right})
+
+    best = math.inf
+    for a, b in zip(knots, knots[1:] + [knots[-1]]):
+        ia = bisect_left(ls, b) if b > a else bisect_right(ls, a)
+        ib = bisect_right(hs, a)
+        den = lw[ia] + hw[ib]
+        mu = (lwx[ia] + hwx[ib]) / den if den > 0 else a
+        mu = min(max(mu, a), b)
+        best = min(best, _phi(mu, lo, hi, w))
+    return max(0.0, best / tot * (1.0 - BOUND_SLACK))
 
 
 def min_sum_min(lo, hi, weights=None):
@@ -57,9 +88,10 @@ def min_max_min(lo, hi, weights=None):
 
 
 def range_min(lo, hi, weights=None):
-    """Exact. The spread can only be driven to zero when the intervals share a point;
-    otherwise the tightest achievable spread is the gap between the highest floor and the
-    lowest ceiling."""
+    """Exact, although range is not monotone. For any t in the box, max t >= max l and
+    min t <= min h, so range >= max l - min h. The bound is attained: with a = min h and
+    b = max l, every [l_i, h_i] meets [a, b], so each t_i can be put inside [a, b]. When the
+    intervals share a point the range is zero."""
     return max(0.0, max(lo) - min(hi))
 
 
