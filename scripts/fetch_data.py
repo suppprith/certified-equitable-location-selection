@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import urllib.request
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -44,7 +45,14 @@ def fetch(rel: str, url: str):
         return
     os.makedirs(os.path.dirname(dest), exist_ok=True)
     print("download", rel)
-    urllib.request.urlretrieve(url, dest)
+    # some feed hosts refuse urllib's default user agent with a 403
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (research data fetch)"})
+    with urllib.request.urlopen(req, timeout=300) as r, open(dest, "wb") as f:
+        while True:
+            chunk = r.read(1 << 20)
+            if not chunk:
+                break
+            f.write(chunk)
     print("        ", round(os.path.getsize(dest) / 1e6, 1), "MB")
 
 def main():
@@ -52,13 +60,26 @@ def main():
     if "--only" in sys.argv:
         only = sys.argv[sys.argv.index("--only") + 1]
     items = [(rel, url) for rel, url in AUTO if only is None or rel.startswith(only + "/")]
+    failed = []
     for rel, url in items:
-        try:
-            fetch(rel, url)
-        except Exception as e:
-            print("FAILED  ", rel, "->", e)
+        # mirrors time out now and then; a missing network must stop the run here rather
+        # than surface later as a missing-file error inside the router
+        for attempt in range(1, 5):
+            try:
+                fetch(rel, url)
+                break
+            except Exception as e:
+                print("FAILED  ", rel, "attempt", attempt, "->", e)
+                partial = os.path.join(DATA, rel)
+                if os.path.exists(partial):
+                    os.remove(partial)
+                time.sleep(20 * attempt)
+        else:
+            failed.append(rel)
     if only is None:
         print(MANUAL)
+    if failed:
+        sys.exit("could not download: " + ", ".join(failed))
 
 if __name__ == "__main__":
     main()
