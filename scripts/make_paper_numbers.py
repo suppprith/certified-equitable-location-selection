@@ -91,8 +91,10 @@ mac("MedianRegion", inst.region_km2.median(), ".0f")
 unreach = 1 - inst.n_feasible.sum() / inst.n_fine.sum()
 mac("PctUnreachable", pct(unreach, 0))
 mac("NUsers", int(inst.n_users.iloc[0]))
+# only cities with a timetable: for street modes the date does not matter
+timetabled = inst[inst.modes.str.contains("transit")].city.unique()
 mac("Departures", "; ".join("%s %s" % (CITY_NAME[c], d.split(" ")[0]) for c, d in
-                            inst.groupby("city").departure.first().items()))
+                            inst.groupby("city").departure.first().items() if c in timetabled))
 
 # ---------------------------------------------------------------- search and cost
 order = [
@@ -451,6 +453,10 @@ claims = {
         all(int(macros["NotOpt" + n]) == int(macros["OptExcl" + n])
             for n in ("PolyContour", "PolyWide")),
     "widening does not remove polygon failures": int(macros["NotOptPolyWide"]) > 0,
+    "both polygon readings fail equally often, with the same worst case and empty count":
+        macros["WrongPolyNearest"] == macros["WrongPolyContour"]
+        and macros["WorstExcessPolyNearest"] == macros["WorstExcessPolyContour"]
+        and macros["NoAnswerPolyNearest"] == macros["NoAnswerPolyContour"],
     "every surface has a robust 1.2-2 km violation":
         macros["SurfAnyViolFar"] == macros["SurfWithFar"],
     "transit is the most affected mode": macros["LipFarRobMaxMode"] == "transit",
