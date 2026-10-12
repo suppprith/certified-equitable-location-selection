@@ -100,7 +100,7 @@ order = [
     ("exhaustive_screened", "Exhaustive after screen"),
     ("geometric", "Straight-line bound"),
     ("alt", "Landmarks (ALT)"),
-    ("lipschitz_assumed", "Lipschitz, as submitted"),
+    ("lipschitz_assumed", "Lipschitz, no screen"),
     ("lipschitz_assumed_screened", "Lipschitz + screen"),
     ("lipschitz_recalibrated_screened", "Lipschitz recal.\\ + screen"),
     ("bands_K12_noscreen", "Level sets, $K{=}12$, no screen"),
@@ -144,7 +144,8 @@ write_rows("tab_search.tex", "RowsSearch", lines)
 for key, name in [("exhaustive", "Exh"), ("exhaustive_screened", "ExhScr"),
                   ("lipschitz_assumed", "LipSub"), ("lipschitz_assumed_screened", "LipScr"),
                   ("lipschitz_recalibrated_screened", "LipRecScr"),
-                  ("bands_K4", "BandFour"), ("bands_K12", "BandTwelve"), ("bands_K60", "BandSixty"),
+                  ("bands_K4", "BandFour"), ("bands_K6", "BandSix"), ("bands_K12", "BandTwelve"),
+                  ("bands_K24", "BandTwentyFour"), ("bands_K60", "BandSixty"),
                   ("bands_K12_noscreen", "BandTwelveNoScr"), ("alt", "Alt"),
                   ("geometric", "Geo"), ("polygon_contour", "PolyContour"),
                   ("polygon_nearest", "PolyNearest"), ("polygon_contour_widened", "PolyWide"),
@@ -180,6 +181,10 @@ mac("RatioExhExhScr", ratio("exhaustive", "exhaustive_screened", "pairs"), ".1f"
 mac("RatioExhScrBandTwelve", ratio("exhaustive_screened", "bands_K12"), ".0f")
 mac("RatioLipSubLipScr", ratio("lipschitz_assumed", "lipschitz_assumed_screened", "pairs"), ".1f")
 mac("RatioNoScrScr", ratio("bands_K12_noscreen", "bands_K12", "pairs"), ".1f")
+mac("RatioLipSubBandSixty", ratio("lipschitz_assumed", "bands_K60"), ".0f")
+mac("RatioExhScrBandSixty", ratio("exhaustive_screened", "bands_K60"), ".0f")
+mac("RatioExhBandTwelve", ratio("exhaustive", "bands_K12"), ".0f")
+mac("RatioLipScrBandTwelvePairs", ratio("lipschitz_assumed_screened", "bands_K12", "pairs"), ".1f")
 
 # the submitted configuration reproduces? compare with the CSVs of the submitted version
 old = []
@@ -253,6 +258,25 @@ for mode in modes:
     mac("LipSurf" + mode.capitalize(), len(d))
 write_rows("tab_lipschitz.tex", "RowsLipschitz", lines)
 
+# extremes across modes, so the text never names a mode the data does not single out
+far_rob = {m: float(macros["LipFarRob" + m.capitalize()]) for m in modes
+           if "LipFarRob" + m.capitalize() in macros}
+rec_rob = {m: float(macros["LipRecRob" + m.capitalize()]) for m in modes
+           if "LipRecRob" + m.capitalize() in macros}
+rec_fac = {m: float(macros["LipRecFactor" + m.capitalize()]) for m in modes
+           if "LipRecFactor" + m.capitalize() in macros}
+lo_mode = min(far_rob, key=far_rob.get)
+mac("LipFarRobMinMode", lo_mode)
+mac("LipFarRobMin", far_rob[lo_mode], ".1f")
+mac("LipFarRobMax", max(far_rob.values()), ".1f")
+mac("LipFarRobMaxMode", max(far_rob, key=far_rob.get))
+mac("LipRecRobMin", min(rec_rob.values()), ".1f")
+mac("LipRecRobMax", max(rec_rob.values()), ".1f")
+mac("LipRecFactorMin", min(rec_fac.values()), ".1f")
+mac("LipRecFactorMax", max(rec_fac.values()), ".1f")
+mac("LipRecFactorMinMode", min(rec_fac, key=rec_fac.get))
+mac("LipRecFactorMaxMode", max(rec_fac, key=rec_fac.get))
+
 surf_viol = lip["b1.2_2_viol_robust"]
 mac("SurfAnyViolFar", int((surf_viol > 0).sum()))
 mac("SurfWithFar", int(surf_viol.notna().sum()))
@@ -284,7 +308,8 @@ if "t_full_sweep_s" in t:
     mac("TimeLipScr", ts, ".2f")
     mac("TimeRatio", tb / tl, ".2f")
     mac("TimeRatioScr", tb / ts, ".2f")
-    per_city = t.groupby("city").apply(lambda d: d.t_full_sweep_s.mean() / d.t_lip_touched_s.mean())
+    per_city = (t.groupby("city").t_full_sweep_s.mean()
+                / t.groupby("city").t_lip_touched_s.mean())
     mac("TimeRatioMin", per_city.min(), ".2f")
     mac("TimeRatioMax", per_city.max(), ".2f")
     print("\nwall clock: sweep %.2fs  lipschitz touched %.2fs  screened %.2fs" % (tb, tl, ts))
@@ -343,7 +368,9 @@ for k, p, med, ci, frac in tests:
     mac("RedHi" + name, pct(ci[1], 0))
     mac("Holm" + name, ("%.0e" % holm[k]).replace("e-0", "e-").replace("e-", "\\times10^{-") + "}"
         if holm[k] < 0.001 else "%.3f" % holm[k])
-mac("MaxHolmNonRandom", max(holm[k] for k in holm if k != "random_100"), ".1e")
+worst_p = max(holm.values())
+mantissa, exponent = ("%.0e" % worst_p).split("e")
+mac("MaxHolm", r"%s\times10^{%d}" % (mantissa, int(exponent)))
 
 # ---------------------------------------------------------------- discretisation (Euclidean)
 tess = pd.read_csv(os.path.join(OUT, "tessellation.csv"))
@@ -395,6 +422,50 @@ print("\ndiscretisation\n", agg.round(3))
 print("Friedman chi2=%.2f p=%.3g on %d instances; best-worst spread %.3f [%.3f, %.3f]"
       % (fr.statistic, fr.pvalue, len(wide), spread, lo, hi))
 
+# ---------------------------------------------------------------- claims in the prose
+# Each qualitative sentence in the paper is checked here against the data; a failed check
+# means the sentence must change, not the check.
+eqm = eq[eq.key.isin(common)].groupby("method")[metrics_cols].mean()
+own = {"variance_opt": ("variance", min), "ede_opt": ("ede", min), "min_range": ("range", min),
+       "min_max": ("max", min), "min_sum": ("mean", min)}
+claims = {
+    "level sets optimal on every instance, every K":
+        all(summary.loc[k, "optimal"] == 1 for k in summary.index if k.startswith("bands_K")),
+    "screened Lipschitz certified wrong points": int(macros.get("WrongLipScr", 0)) > 0,
+    "recalibrated screened Lipschitz right on every instance":
+        summary.loc["lipschitz_recalibrated_screened", "optimal"] == 1,
+    "ALT never wrong": macros.get("WrongAlt") == "0" and macros.get("NoAnswerAlt") == "0",
+    "straight-line prunes nothing for variance": macros["PairsGeo"] == macros["PairsExh"],
+    "screened Lipschitz costs about as much as level sets":
+        0.5 <= summary.loc["lipschitz_assumed_screened", "billed"]
+        / summary.loc["bands_K12", "billed"] <= 2.0,
+    "each optimiser best on its own metric":
+        all(eqm[col].idxmin() == k for k, (col, _f) in own.items()),
+    "variance optimum has a longer mean trip than min-sum and EDE":
+        eqm.loc["variance_opt", "mean"] > max(eqm.loc["min_sum", "mean"], eqm.loc["ede_opt", "mean"]),
+    "isochrone intersection closer to min-max than to the variance optimum on every metric":
+        all(abs(eqm.loc["iso_intersection", c] - eqm.loc["min_max", c])
+            <= abs(eqm.loc["iso_intersection", c] - eqm.loc["variance_opt", c]) for c in metrics_cols),
+    "all nine comparisons significant": max(holm.values()) < 0.05,
+    "contour-polygon failures, widened or not, all had the optimum marked unreachable":
+        all(int(macros["NotOpt" + n]) == int(macros["OptExcl" + n])
+            for n in ("PolyContour", "PolyWide")),
+    "widening does not remove polygon failures": int(macros["NotOptPolyWide"]) > 0,
+    "every surface has a robust 1.2-2 km violation":
+        macros["SurfAnyViolFar"] == macros["SurfWithFar"],
+    "transit is the most affected mode": macros["LipFarRobMaxMode"] == "transit",
+    "certified grid search at its own optimum on every run":
+        macros["TessCertHit"] == macros["TessRuns"],
+    "patterns indistinguishable (Friedman p > 0.05)": fr.pvalue > 0.05,
+    "spread interval contains zero": lo <= 0 <= hi,
+    "sweep slower than the Lipschitz candidates on the router in every city":
+        float(macros["TimeRatioMin"]) > 1.0,
+}
+print("\nclaims made in the text")
+bad_claims = [k for k, ok in claims.items() if not ok]
+for k, ok in claims.items():
+    print("  %s  %s" % ("ok  " if ok else "FAIL", k))
+
 # ---------------------------------------------------------------- write macros
 bad = [k for k in macros if not k.isalpha()]
 if bad:
@@ -404,3 +475,5 @@ with open(os.path.join(DEST, "numbers.tex"), "w") as f:
     for k in sorted(macros):
         f.write("\\newcommand{\\%s}{%s}\n" % (k, macros[k]))
 print("\nwrote %d macros and tables to %s" % (len(macros), DEST))
+if bad_claims:
+    sys.exit("claims the data no longer support: %s" % bad_claims)
