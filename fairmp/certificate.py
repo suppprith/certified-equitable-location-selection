@@ -12,11 +12,13 @@ from .objectives import variance_min
 from .travel_time import EUCLIDEAN_SPEED_KMH
 
 
-def euclidean_lipschitz(modes_list, detour: float = 1.3) -> list[float]:
-
+def euclidean_lipschitz(modes_list, detour: float = 1.3, speeds=None) -> list[float]:
+    """Speed-derived constant 60 * detour / speed, in minutes per km. Exactly tight on the
+    Euclidean backend with the same speeds and detour."""
+    spd = speeds or EUCLIDEAN_SPEED_KMH
     out = []
     for modes in modes_list:
-        speed = min(EUCLIDEAN_SPEED_KMH.get(m, 4.8) for m in modes)
+        speed = min(spd.get(m, 4.8) for m in modes)
         out.append(60.0 * detour / speed)
     return out
 
