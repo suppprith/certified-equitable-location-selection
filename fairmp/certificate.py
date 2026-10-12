@@ -101,6 +101,53 @@ def certificate_report(origins, modes_list, evaluator, params: Params, best, all
             "extra_evals": len(coarse_times) - known, "v_star": v_star}
 
 
+def screened_lipschitz_search(origins, modes_list, evaluator, params: Params, lipschitz,
+                              feasible, tess=None, bucket: str = "static"):
+    """The Lipschitz bound given the same reachability screen as the level-set search.
+
+    feasible(pt) says whether every user reaches pt within the cap; it comes from the same
+    one-to-all sweeps the level-set search pays for, so neither search queries an
+    unreachable candidate. Anchors are the screened coarse centres, each bought with N
+    point queries. Every screened fine candidate is boxed from its nearest anchor by the
+    Lipschitz constant, and the candidates are then evaluated in order of their box minimum
+    exactly as in the level-set search. The result is certified only if the constant holds,
+    which is the premise the audit tests."""
+    from .bands import box_search, lipschitz_box
+
+    t = resolve_tessellation(origins, params, tess)
+    n = len(origins)
+    poly = region_polygon(origins)
+    anchors = []
+    for _c, pt in t.cells_in(poly, params.coarse_res):
+        if feasible(pt):
+            times = [evaluator.effective(o, pt, m, bucket) for o, m in zip(origins, modes_list)]
+            if metrics.all_reachable(times, n):
+                anchors.append((pt, times))
+    anchor_calls = evaluator.calls
+
+    cells = t.cells_in(poly, params.fine_res)
+    pts = [pt for _c, pt in cells]
+    boxes = []
+    for pt in pts:
+        if not feasible(pt):
+            boxes.append(None)
+            continue
+        if not anchors:
+            boxes.append(([0.0] * n, [math.inf] * n))
+            continue
+        a_pt, a_times = min(anchors, key=lambda a: haversine_km(a[0], pt))
+        boxes.append(lipschitz_box(a_times, haversine_km(a_pt, pt), lipschitz))
+
+    def evaluate(j):
+        return [evaluator.effective(o, pts[j], m, bucket) for o, m in zip(origins, modes_list)]
+
+    best_j, best_val, info = box_search(boxes, evaluate, n, "variance")
+    return (None if best_j is None else cells[best_j]), {
+        "certified": best_j is not None, "v_star": best_val,
+        "routing_calls": evaluator.calls, "anchor_calls": anchor_calls,
+        "anchors": len(anchors), "evaluated": info["evaluated"]}
+
+
 def certified_search(origins, modes_list, evaluator, params: Params, lipschitz,
                      bucket: str = "static", tess=None):
 

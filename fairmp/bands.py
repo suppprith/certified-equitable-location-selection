@@ -125,9 +125,44 @@ def iso_int(origins, modes_list, backend, thresholds, points, oracle=None):
     return None
 
 
+def box_search(boxes, evaluate, n, objective="variance", kappa=None):
+    """Certified search over candidates whose travel-time boxes are already known.
+
+    boxes[j] is (lo, hi) for candidate j, or None when candidate j is known to be infeasible
+    and is dropped without a query. evaluate(j) buys the exact times of candidate j.
+    Candidates are evaluated in increasing order of their box minimum, and the search stops
+    at the first bound that cannot beat the incumbent. If every feasible candidate's box
+    contains its true times, the incumbent is optimal over the feasible candidates.
+
+    Every candidate whose bound is below the optimum F* is evaluated, and no candidate whose
+    bound exceeds F* is, since the optimum itself is reached first. So the number of
+    evaluations lies between the counts of bounds below F* and bounds at or below F*; the
+    difference is ties."""
+    from . import objectives as ob
+
+    box_min = ob.BOX_MIN[objective]
+    kw = {"kappa": kappa} if objective == "ede" else {}
+    order = sorted((box_min(b[0], b[1], **kw), j) for j, b in enumerate(boxes) if b is not None)
+    evaluate_obj = ob.EVAL[objective]
+
+    best_j, best_val, evaluated = None, math.inf, 0
+    for bound, j in order:
+        if bound >= best_val:
+            break
+        times = evaluate(j)
+        evaluated += 1
+        if not metrics.all_reachable(times, n):
+            continue
+        val = evaluate_obj(times, None, kappa) if objective == "ede" else evaluate_obj(times)
+        if val < best_val:
+            best_j, best_val = j, val
+    return best_j, best_val, {"evaluated": evaluated, "boxed": len(order),
+                              "below_value": sum(1 for b, _ in order if b < best_val)}
+
+
 def band_certified_search(origins, modes_list, evaluator, params: Params, thresholds,
                           band_source, objective="variance", tess=None, bucket: str = "static",
-                          kappa=None):
+                          kappa=None, screen: bool = True):
     """Certified search whose bound comes from level sets rather than from a smoothness
     assumption.
 
@@ -142,8 +177,6 @@ def band_certified_search(origins, modes_list, evaluator, params: Params, thresh
     candidate set. Unlike the Lipschitz box this needs no modulus of continuity, so it stays
     valid across the discontinuities that a real multimodal field actually contains.
     """
-    from . import objectives as ob
-
     t = resolve_tessellation(origins, params, tess)
     n = len(origins)
     poly = region_polygon(origins)
@@ -155,42 +188,32 @@ def band_certified_search(origins, modes_list, evaluator, params: Params, thresh
     oracle = FieldOracle(band_source)
     fields = oracle.fields(origins, modes_list, pts)
 
-    box_min = ob.BOX_MIN[objective]
-    kw = {"kappa": kappa} if objective == "ede" else {}
-
-    bounds = []
+    boxes = []
     unreachable = 0
     for j in range(len(pts)):
         times = [fields[i][j] for i in range(n)]
-        # A candidate one user cannot reach scores infinity, so it is not a competitor and
-        # must not be queried. Without this it lands in the open band [t_last, inf), whose
-        # unbounded ceiling drives the box minimum to zero and makes the least promising
-        # candidates look like the most promising ones. On real networks, where a large
-        # share of the grid is unreachable on foot, that alone forces a near-exhaustive
-        # search.
+        # A candidate beyond the last threshold for some user lies outside that user's
+        # outermost isochrone, which is the definition of unreachable within the cap, so it
+        # cannot be optimal and is dropped without a query. With screen=False it is kept
+        # with the open band [t_last, inf) instead, which is still sound but weaker.
         if not metrics.all_reachable(times, n):
             unreachable += 1
-            continue
-        lo, hi = band_box(times, thresholds)
-        bounds.append((box_min(lo, hi, **kw), j))
-    bounds.sort()
+            if screen:
+                boxes.append(None)
+                continue
+        boxes.append(band_box(times, thresholds))
 
-    evaluate = ob.EVAL[objective]
-    incumbent, best_val, evaluated = None, math.inf, 0
-    for bound, j in bounds:
-        if bound >= best_val - 1e-12:
-            break
-        cell, pt = cells[j]
-        times = [evaluator.effective(o, pt, m, bucket) for o, m in zip(origins, modes_list)]
-        evaluated += 1
-        if not metrics.all_reachable(times, n):
-            continue
-        val = evaluate(times, None, kappa) if objective == "ede" else evaluate(times)
-        if val < best_val:
-            best_val, incumbent = val, Area(cell, pt, times, val,
-                                            metrics.feasible(times, n, params.t_max))
+    def evaluate(j):
+        return [evaluator.effective(o, pts[j], m, bucket) for o, m in zip(origins, modes_list)]
 
-    reachable = len(bounds)
+    best_j, best_val, info = box_search(boxes, evaluate, n, objective, kappa)
+    incumbent = None
+    if best_j is not None:
+        cell, pt = cells[best_j]
+        times = evaluate(best_j)
+        incumbent = Area(cell, pt, times, best_val, metrics.feasible(times, n, params.t_max))
+
+    reachable = len(pts) - unreachable
     return incumbent, {
         "certified": incumbent is not None,
         "objective": objective,
@@ -198,14 +221,15 @@ def band_certified_search(origins, modes_list, evaluator, params: Params, thresh
         "candidates": len(pts),
         "reachable": reachable,
         "unreachable": unreachable,
-        "evaluated": evaluated,
+        "evaluated": info["evaluated"],
         # against the reachable set, since unreachable candidates are excluded by the
         # sweep itself and never cost a point query
-        "eval_fraction": evaluated / reachable if reachable else float("nan"),
-        "eval_fraction_all": evaluated / len(pts) if pts else float("nan"),
+        "eval_fraction": info["evaluated"] / reachable if reachable else float("nan"),
+        "eval_fraction_all": info["evaluated"] / len(pts) if pts else float("nan"),
         "sweeps": oracle.sweeps,
         "point_queries": evaluator.calls,
         "n_thresholds": len(thresholds) - 1,
+        "screen": screen,
     }
 
 
