@@ -101,6 +101,67 @@ def _service_window(gtfs_path: str):
     return lo, hi, weekdays
 
 
+def _read_csv(z, name):
+    if name not in z.namelist():
+        return [], {}
+    rows = z.read(name).decode("utf-8-sig").splitlines()
+    if not rows:
+        return [], {}
+    head = [h.strip().strip('"') for h in rows[0].split(",")]
+    return [r.split(",") for r in rows[1:] if r], {h: i for i, h in enumerate(head)}
+
+
+def _trips_on(gtfs_path: str, dates) -> dict:
+    """Scheduled trips on each date: services active by calendar.txt, minus those removed
+    and plus those added by calendar_dates.txt, weighted by their trip counts. A holiday
+    shows up as a date running fewer trips than an ordinary weekday."""
+    def clean(x):
+        return x.strip().strip('"')
+
+    with zipfile.ZipFile(gtfs_path) as z:
+        cal, ci = _read_csv(z, "calendar.txt")
+        exc, ei = _read_csv(z, "calendar_dates.txt")
+        trips, ti = _read_csv(z, "trips.txt")
+    per_service = {}
+    for r in trips:
+        if len(r) > ti.get("service_id", 10 ** 9):
+            sid = clean(r[ti["service_id"]])
+            per_service[sid] = per_service.get(sid, 0) + 1
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    base = []
+    for r in cal:
+        try:
+            sid = clean(r[ci["service_id"]])
+            s0 = dt.datetime.strptime(clean(r[ci["start_date"]]), "%Y%m%d").date()
+            s1 = dt.datetime.strptime(clean(r[ci["end_date"]]), "%Y%m%d").date()
+            flags = [clean(r[ci[d]]) == "1" for d in days]
+        except (KeyError, ValueError, IndexError):
+            continue
+        base.append((sid, s0, s1, flags))
+    changes = {}
+    for r in exc:
+        try:
+            d = dt.datetime.strptime(clean(r[ei["date"]]), "%Y%m%d").date()
+            changes.setdefault(d, []).append((clean(r[ei["service_id"]]),
+                                              clean(r[ei["exception_type"]])))
+        except (KeyError, ValueError, IndexError):
+            continue
+    out = {}
+    for d in dates:
+        active = {sid for sid, s0, s1, flags in base if s0 <= d <= s1 and flags[d.weekday()]}
+        for sid, kind in changes.get(d, []):
+            if kind == "1":
+                active.add(sid)
+            elif kind == "2":
+                active.discard(sid)
+        out[d] = sum(per_service.get(sid, 0) for sid in active)
+    return out
+
+
+def _holiday_season(d) -> bool:
+    return (d.month == 12 and d.day >= 20) or (d.month == 1 and d.day <= 6)
+
+
 def pick_departure(city: str, hour: int = 8, minute: int = 30) -> str:
     """A weekday inside every loaded feed's validity window.
 
@@ -123,13 +184,21 @@ def pick_departure(city: str, hour: int = 8, minute: int = 30) -> str:
     if lo > hi:
         raise ValueError("feeds for %s have no overlapping validity window" % city)
 
-    # a quarter of the way in, so a feed that tapers at its edges is still dense
+    # A quarter of the way in, so a feed that tapers at its edges is still dense, on a
+    # weekday that runs at least 95 percent of the median weekday's trips in every feed and
+    # is outside the Christmas fortnight, so the timetable is an ordinary one. An earlier
+    # version, which ignored service exceptions, landed on 24 December.
+    weekdays = [lo + dt.timedelta(days=i) for i in range((hi - lo).days + 1)]
+    weekdays = [d0 for d0 in weekdays if d0.weekday() in common]
+    trips = [_trips_on(g, weekdays) for g in gtfs]
+    typical = [sorted(t.values())[len(t) // 2] for t in trips]
     d = lo + dt.timedelta(days=max(1, (hi - lo).days // 4))
-    for _ in range(14):
-        if d.weekday() in common and lo <= d <= hi:
+    while d <= hi:
+        if (d.weekday() in common and not _holiday_season(d)
+                and all(t.get(d, 0) >= 0.95 * m for t, m in zip(trips, typical))):
             return "%s %02d:%02d:00" % (d.isoformat(), hour, minute)
         d += dt.timedelta(days=1)
-    raise ValueError("no weekday with service found for %s in %s..%s" % (city, lo, hi))
+    raise ValueError("no ordinary weekday with service found for %s in %s..%s" % (city, lo, hi))
 
 
 if __name__ == "__main__":
