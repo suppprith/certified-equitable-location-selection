@@ -178,6 +178,13 @@ for key, name in [("exhaustive", "Exh"), ("exhaustive_screened", "ExhScr"),
     if len(worst):
         mac("WorstExcess" + name, worst.max(), ".0f")
 
+# the unscreened Lipschitz search's one miss: it returned no point although some were feasible
+miss = var[(var.method == "lipschitz_assumed") & ~np.isfinite(var.value)]
+if len(miss):
+    mac("LipSubMissCity", CITY_NAME[miss.city.iloc[0]])
+    mac("LipSubMissFeas", int(miss.n_feasible.iloc[0]))
+    mac("LipSubMissCands", fmt_int(miss.n_fine.iloc[0]))
+
 # ratios the text quotes
 def ratio(a, b, col="billed"):
     return summary.loc[a, col] / summary.loc[b, col]
@@ -325,7 +332,7 @@ if "t_full_sweep_s" in t:
 # ---------------------------------------------------------------- equity
 rules = [("variance_opt", "Variance (ours)"), ("ede_opt", "Kolm-Pollak EDE"),
          ("min_range", "Min-range"), ("min_max", "Min-max"), ("min_sum", "Min-sum"),
-         ("random_100", "Random, 100 samples"), ("iso_intersection", "Isochrone intersection"),
+         ("random_100", "Best of 100 random"), ("iso_intersection", "Isochrone intersection"),
          ("centroid", "Centroid"), ("weighted_centroid", "Weighted centroid"),
          ("geometric_median", "Geometric median")]
 eq = equity.copy()
@@ -473,6 +480,8 @@ claims = {
             and (k.startswith("bands_") or k.startswith("geometric"))),
     "K=12 level sets cheaper than the screened Lipschitz search":
         summary.loc["bands_K12", "billed"] < summary.loc["lipschitz_assumed_screened", "billed"],
+    "unscreened Lipschitz: no wrong point, one instance with no point":
+        macros.get("WrongLipSub") == "0" and macros.get("NoAnswerLipSub") == "1",
     "ALT never wrong": macros.get("WrongAlt") == "0" and macros.get("NoAnswerAlt") == "0",
     "straight-line prunes nothing for variance": macros["PairsGeo"] == macros["PairsExh"],
     "screened Lipschitz costs about as much as level sets":
