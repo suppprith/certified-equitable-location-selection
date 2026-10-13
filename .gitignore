@@ -14,3 +14,4 @@ tools/
 # run logs and parked figures; the result CSVs in outputs/ are tracked on purpose
 outputs/*.log
 outputs/figures/
+outputs/paper/

@@ -98,18 +98,18 @@ mac("Departures", "; ".join("%s %s" % (CITY_NAME[c], d.split(" ")[0]) for c, d i
 
 # ---------------------------------------------------------------- search and cost
 order = [
-    ("exhaustive", "Exhaustive, no screen"),
-    ("exhaustive_screened", "Exhaustive after screen"),
-    ("geometric", "Straight-line bound"),
+    ("exhaustive", "Exhaustive"),
+    ("exhaustive_screened", "Exhaustive + screen"),
+    ("geometric", "Straight line"),
     ("alt", "Landmarks (ALT)"),
-    ("lipschitz_assumed", "Lipschitz, no screen"),
+    ("lipschitz_assumed", "Lipschitz"),
     ("lipschitz_assumed_screened", "Lipschitz + screen"),
-    ("lipschitz_recalibrated_screened", "Lipschitz recal.\\ + screen"),
-    ("bands_K12_noscreen", "Level sets, $K{=}12$, no screen"),
+    ("lipschitz_recalibrated_screened", "Lipschitz recal.\ + scr."),
+    ("polygon_contour", "Polygon bands, $K{=}12$"),
+    ("bands_K12_noscreen", "Level sets, $K{=}12$, no scr."),
     ("bands_K4", "Level sets, $K{=}4$"),
     ("bands_K12", "Level sets, $K{=}12$"),
     ("bands_K60", "Level sets, $K{=}60$"),
-    ("polygon_contour", "Polygon bands, $K{=}12$"),
 ]
 var = search[search.objective == "variance"]
 g = var.groupby("method")
@@ -139,8 +139,8 @@ for key, label in order:
     pre = " (+%d)" % round(r.pre) if r.pre else ""
     sweeps = ("%d%s" % (round(r.sweeps), pre)) if (r.sweeps or r.pre) else "0"
     premise = sound_by.get(key, "yes")
-    lines.append("%s & %s & %s & %s & %s & %s \\\\" % (
-        label, fmt_int(r.pairs), sweeps, iso, pct(r.optimal, 0), premise))
+    lines.append("%s & %s & %s & %s & %s & %s & %s \\\\" % (
+        label, fmt_int(r.pairs), sweeps, iso, fmt_int(r.billed), pct(r.optimal, 0), premise))
 write_rows("tab_search.tex", "RowsSearch", lines)
 
 for key, name in [("exhaustive", "Exh"), ("exhaustive_screened", "ExhScr"),
@@ -436,6 +436,18 @@ claims = {
     "screened Lipschitz certified wrong points": int(macros.get("WrongLipScr", 0)) > 0,
     "recalibrated screened Lipschitz right on every instance":
         summary.loc["lipschitz_recalibrated_screened", "optimal"] == 1,
+    "level sets are the cheapest sound construction, for every K tested":
+        summary.loc[[k for k in summary.index if k.startswith("bands_K") and "noscreen" not in k],
+                    "billed"].max() < summary.loc["exhaustive_screened", "billed"],
+    # sound by construction: exhaustive search, the straight-line bound, and level sets read
+    # from the exact surface; every other box rests on a premise or a polygon
+    "among bounds that prune, only level sets are a proof":
+        all(k.startswith("bands_") for k in summary.index
+            if summary.loc[k, "billed"] < summary.loc["exhaustive", "billed"]
+            and not k.startswith("exhaustive")
+            and (k.startswith("bands_") or k.startswith("geometric"))),
+    "K=12 level sets cheaper than the screened Lipschitz search":
+        summary.loc["bands_K12", "billed"] < summary.loc["lipschitz_assumed_screened", "billed"],
     "ALT never wrong": macros.get("WrongAlt") == "0" and macros.get("NoAnswerAlt") == "0",
     "straight-line prunes nothing for variance": macros["PairsGeo"] == macros["PairsExh"],
     "screened Lipschitz costs about as much as level sets":
