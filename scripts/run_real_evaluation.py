@@ -259,7 +259,8 @@ def run_instance(r5, seed, departure, out):
 
     # exhaustive, with and without the reachability screen
     search_row("exhaustive", truth, n * nf, evaluated=nf)
-    search_row("exhaustive_screened", truth, n * int(feas.sum()), sweeps=n,
+    # on an API the screen is each origin's outermost isochrone: one request per origin
+    search_row("exhaustive_screened", truth, n * int(feas.sum()), sweeps=n, iso_requests=n,
                evaluated=int(feas.sum()))
 
     # Lipschitz: the adaptive search as submitted, and with the same screen
@@ -278,7 +279,7 @@ def run_instance(r5, seed, departure, out):
         ev = CachedEvaluator(pre)
         _c, cert = screened_lipschitz_search(origins, modes, ev, PARAMS, lip, feasible, tess=tess)
         search_row("lipschitz_%s_screened" % name, cert["v_star"], ev.calls, sweeps=n,
-                   evaluated=cert["evaluated"], certified=cert["certified"],
+                   iso_requests=n, evaluated=cert["evaluated"], certified=cert["certified"],
                    anchors=cert["anchors"], anchor_pairs=cert["anchor_calls"])
         touched["lipschitz_%s_screened" % name] = {k[2] for k in ev._cache}
 

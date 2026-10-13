@@ -123,6 +123,11 @@ summary = pd.DataFrame({
     "certified": g.certified.mean(),
     "n": g.size(),
 })
+# the screen needs each origin's outermost isochrone, one request per origin; the band rows
+# already pay for it among their K thresholds. max() so CSVs that record it are not counted twice
+for k in ("exhaustive_screened", "lipschitz_assumed_screened", "lipschitz_recalibrated_screened"):
+    if k in summary.index:
+        summary.loc[k, "iso"] = max(summary.loc[k, "iso"], int(inst.n_users.iloc[0]))
 summary["billed"] = summary.pairs + summary.iso
 print("\nSearch variants, variance objective, mean per instance")
 print(summary.round(2).to_string())
