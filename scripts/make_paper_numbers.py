@@ -424,6 +424,26 @@ print("\ndiscretisation\n", agg.round(3))
 print("Friedman chi2=%.2f p=%.3g on %d instances; best-worst spread %.3f [%.3f, %.3f]"
       % (fr.statistic, fr.pvalue, len(wide), spread, lo, hi))
 
+# ---------------------------------------------------------------- discretisation, real networks
+disc_files = [os.path.join(OUT, "eval_discretisation_%s.csv" % c) for c in CITIES]
+disc_files = [f for f in disc_files if os.path.exists(f)]
+if disc_files:
+    disc = pd.concat([pd.read_csv(f) for f in disc_files], ignore_index=True)
+    g = disc.gap_pct.clip(lower=0)
+    mac("RealDiscN", len(disc))
+    mac("RealDiscMedian", g.median(), ".2f")
+    mac("RealDiscMean", g.mean(), ".2f")
+    mac("RealDiscPNinety", g.quantile(0.9), ".1f")
+    mac("RealDiscMax", g.max(), ".0f")
+    mac("RealDiscZero", pct((g < 1e-9).mean(), 0))
+    mac("RealDiscKm", disc.km_between_optima.median(), ".2f")
+    h3_mean = float(tess[tess.pattern == "h3"].quant_gap_pct.mean())
+    mac("TessHexMean", h3_mean, ".2f")
+    print("\nreal-network discretisation gap over %d instances: median %.2f%%, mean %.2f%%, "
+          "p90 %.1f%%, max %.1f%%, zero on %.0f%%; straight-line hexagonal mean %.2f%%"
+          % (len(disc), g.median(), g.mean(), g.quantile(0.9), g.max(), 100 * (g < 1e-9).mean(),
+             h3_mean))
+
 # ---------------------------------------------------------------- claims in the prose
 # Each qualitative sentence in the paper is checked here against the data; a failed check
 # means the sentence must change, not the check.
