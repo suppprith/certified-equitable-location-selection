@@ -19,7 +19,7 @@ on:
         description: Which experiments to run
         default: all
         type: choice
-        options: [all, evaluation, soundness, lipschitz, tessellation, jumps]
+        options: [all, evaluation, discretisation, soundness, lipschitz, tessellation, jumps]
       cities:
         description: Cities for the evaluation job, as a JSON list
         default: '["london", "bayarea", "tokyo"]'
@@ -71,6 +71,43 @@ jobs:
         with:
           name: evaluation_${{ matrix.city }}
           path: outputs/eval_*_${{ matrix.city }}.csv
+
+  # Discretisation gap on the real networks: optimum over the candidate set against a grid
+  # seven times finer, on the same instances as the evaluation job.
+  discretisation:
+    if: ${{ inputs.jobs == 'all' || inputs.jobs == 'discretisation' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        city: ${{ fromJSON(inputs.cities) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: pip install -r requirements.txt osmium
+      - name: Fetch network + feeds
+        run: python scripts/fetch_data.py --only ${{ matrix.city }}
+      - name: Crop the Bay Area to the SF extent
+        if: ${{ matrix.city == 'bayarea' }}
+        run: python scripts/crop_bayarea.py
+      - name: Real-network discretisation gap
+        env:
+          CITY: ${{ matrix.city }}
+          N_INSTANCES: ${{ inputs.n_instances }}
+          JAVA_TOOL_OPTIONS: -Xmx8g
+        run: python scripts/run_real_discretisation.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: discretisation_${{ matrix.city }}
+          path: outputs/eval_discretisation_${{ matrix.city }}.csv
 
   # Does an unsound bound actually make the adaptive search certify a wrong answer?
   # This is the claim the paper rests on, so it runs first and alone.
@@ -204,7 +241,7 @@ jobs:
             outputs/tessellation_summary.csv
 
   commit-results:
-    needs: [evaluation, soundness, lipschitz, tessellation, jumps]
+    needs: [evaluation, discretisation, soundness, lipschitz, tessellation, jumps]
     if: ${{ always() && inputs.commit_results }}
     runs-on: ubuntu-latest
     permissions:
